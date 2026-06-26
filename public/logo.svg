@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 232" fill="none" role="img" aria-label="Sodiq School">
+  <!--
+    Sodiq School emblem (recreation in brand orange #F58220).
+    Replace this file with the official logo asset to use the exact artwork.
+  -->
+  <g stroke="#F58220" stroke-width="8" stroke-linejoin="round" stroke-linecap="round">
+    <!-- Shield outline -->
+    <path d="M22 14 H178 V118 C178 162 140 192 100 212 C60 192 22 162 22 118 Z"/>
+    <!-- Dividers -->
+    <path d="M22 100 H178"/>
+    <path d="M100 14 V206"/>
+  </g>
+
+  <g stroke="#F58220" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" fill="none">
+    <!-- Top-left: open book -->
+    <path d="M34 50 C45 45 55 45 62 50 L62 84 C55 80 45 80 34 84 Z"/>
+    <path d="M62 50 C69 45 79 45 90 50 L90 84 C79 80 69 80 62 84 Z"/>
+
+    <!-- Top-right: cross-hatch (X chain) -->
+    <path d="M116 28 L160 52 M160 28 L116 52"/>
+    <path d="M116 60 L160 84 M160 60 L116 84"/>
+
+    <!-- Bottom-left: horizontal steps -->
+    <path d="M30 118 H92"/>
+    <path d="M38 134 H92"/>
+    <path d="M48 150 H92"/>
+    <path d="M58 166 H92"/>
+  </g>
+
+  <!-- Subtle S accents -->
+  <g fill="#E2E2E2" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="34">
+    <text x="44" y="84" text-anchor="middle">S</text>
+    <text x="138" y="160" text-anchor="middle">S</text>
+  </g>
+</svg>

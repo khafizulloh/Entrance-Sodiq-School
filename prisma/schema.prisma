@@ -48,6 +48,8 @@ model Question {
   testId    String
   text      String
   order     Int      @default(0)
+  // Source publisher the question is taken from: Cambridge / Oxford / Pearson.
+  source    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

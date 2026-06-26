@@ -13,6 +13,11 @@ export const BRANCHES = [
   "Online",
 ] as const;
 
+// Approved question-bank sources. Questions are taken only from these
+// publishers' materials.
+export const SOURCES = ["Cambridge", "Oxford", "Pearson"] as const;
+export type Source = (typeof SOURCES)[number];
+
 /**
  * Map a percentage score to a suggested English placement level.
  * Adjust thresholds here if the school's placement policy changes.

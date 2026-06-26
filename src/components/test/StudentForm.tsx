@@ -141,7 +141,7 @@ export function StudentForm({ loading, onSubmit }: Props) {
         </Field>
       </div>
 
-      <button type="submit" className="btn-gold mt-6 w-full" disabled={loading}>
+      <button type="submit" className="btn-brand mt-6 w-full" disabled={loading}>
         {loading ? <Spinner /> : null}
         {loading ? "Loading test…" : "Continue to Test →"}
       </button>

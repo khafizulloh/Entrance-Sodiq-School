@@ -14,6 +14,8 @@ const prisma = new PrismaClient();
 
 type SeedQuestion = {
   text: string;
+  // Approved publisher source: Cambridge / Oxford / Pearson.
+  source: string;
   options: { label: "A" | "B" | "C" | "D"; text: string; isCorrect: boolean }[];
 };
 
@@ -23,6 +25,7 @@ function sampleQuestionsForGrade(grade: number): SeedQuestion[] {
   return [
     {
       text: "Choose the correct word: She ___ to school every day.",
+      source: "Cambridge",
       options: [
         { label: "A", text: "go", isCorrect: false },
         { label: "B", text: "goes", isCorrect: true },
@@ -32,6 +35,7 @@ function sampleQuestionsForGrade(grade: number): SeedQuestion[] {
     },
     {
       text: "What is the opposite of 'big'?",
+      source: "Oxford",
       options: [
         { label: "A", text: "large", isCorrect: false },
         { label: "B", text: "huge", isCorrect: false },
@@ -41,6 +45,7 @@ function sampleQuestionsForGrade(grade: number): SeedQuestion[] {
     },
     {
       text: "Pick the correct article: I saw ___ elephant at the zoo.",
+      source: "Pearson",
       options: [
         { label: "A", text: "a", isCorrect: false },
         { label: "B", text: "an", isCorrect: true },
@@ -50,6 +55,7 @@ function sampleQuestionsForGrade(grade: number): SeedQuestion[] {
     },
     {
       text: `Math (Grade ${grade}): What is ${grade} + ${grade}?`,
+      source: "Cambridge",
       options: [
         { label: "A", text: `${grade * 2 - 1}`, isCorrect: false },
         { label: "B", text: `${grade * 2}`, isCorrect: true },
@@ -59,6 +65,7 @@ function sampleQuestionsForGrade(grade: number): SeedQuestion[] {
     },
     {
       text: "Choose the correctly spelled word.",
+      source: "Oxford",
       options: [
         { label: "A", text: "recieve", isCorrect: false },
         { label: "B", text: "receive", isCorrect: true },
@@ -108,6 +115,7 @@ async function main() {
             testId: test.id,
             text: q.text,
             order: i,
+            source: q.source,
             options: { create: q.options },
           },
         });

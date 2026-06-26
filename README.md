@@ -24,7 +24,7 @@ Built with **Next.js 15 (App Router) + TypeScript**, **PostgreSQL + Prisma**,
 - Dashboard: students tested, average / highest / lowest score, breakdown by grade and by level.
 - Students list with **search** (name/phone), **filters** (grade, level, score range, date range), and pagination.
 - Per-student detail: full info + every answer marked correct/wrong.
-- **Tests & Questions** manager: edit title, timer and active state per grade; add / edit / delete questions (4 options, one correct).
+- **Tests & Questions** manager: edit title, timer and active state per grade; add / edit / delete questions (4 options, one correct), and tag each question's **source** (Cambridge / Oxford / Pearson).
 - **Export to CSV** (Excel-compatible) — respects the active filters.
 - Delete duplicate / fake submissions; toggle "allow retake".
 
@@ -35,7 +35,7 @@ Built with **Next.js 15 (App Router) + TypeScript**, **PostgreSQL + Prisma**,
 | Layer      | Technology                          |
 | ---------- | ----------------------------------- |
 | Framework  | Next.js 15 (App Router) + TypeScript |
-| Styling    | Tailwind CSS (navy / white / gold)  |
+| Styling    | Tailwind CSS (brand orange / navy / white) |
 | Database   | PostgreSQL (local or Supabase)      |
 | ORM        | Prisma                              |
 | Auth       | JWT (jose) in httpOnly cookie + bcrypt |
@@ -49,7 +49,7 @@ Built with **Next.js 15 (App Router) + TypeScript**, **PostgreSQL + Prisma**,
 
 - **AdminUser** — dashboard users (email, password hash, name, role).
 - **Test** — one per grade; holds `timeLimitSec` and `isActive`.
-- **Question** — belongs to a Test; ordered text.
+- **Question** — belongs to a Test; ordered text + optional `source` (publisher).
 - **Option** — A/B/C/D choice; `isCorrect` flag (never sent to students).
 - **Student** — personal info + `allowRetake`.
 - **Submission** — a completed attempt: score, percentage, level, duration.
@@ -131,6 +131,15 @@ npm run dev
 Cookies are marked `secure` automatically in production, so the app must be served over HTTPS (Vercel does this by default).
 
 ---
+
+## 🎨 Branding & Logo
+
+- Brand colors: **orange `#F58220`** (primary, from the logo), **navy** (dark text/headers), **white** (background). Defined in `tailwind.config.ts` as the `brand` and `navy` tokens.
+- The shield logo lives at `public/logo.svg` (also used as the favicon via `src/app/icon.svg`). The committed file is a faithful recreation in brand orange — **replace `public/logo.svg` (and `src/app/icon.svg`) with the official artwork** to use the exact asset; the `<Logo />` component will pick it up automatically.
+
+## 📚 Question Bank Policy
+
+Questions are intended to come **only from Cambridge, Oxford, and Pearson** materials. Each question has an optional **`source`** field (set in the admin question editor) so you can record which publisher it came from. The seed includes a few sample questions for layout/testing only — replace them with your licensed content via the admin panel. To respect copyright, do not paste publisher text verbatim if you cannot license it; enter your own questions aligned to those syllabi and tag the source.
 
 ## 🔒 Security Notes
 - Correct answers (`isCorrect`) are **never** sent to the browser; scoring is done only on the server.

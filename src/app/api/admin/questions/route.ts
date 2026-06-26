@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return jsonError(parsed.error.errors[0]?.message ?? "Invalid question.");
   }
-  const { testId, text, order, options } = parsed.data;
+  const { testId, text, order, source, options } = parsed.data;
 
   const test = await prisma.test.findUnique({ where: { id: testId } });
   if (!test) return jsonError("Test not found.", 404);
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       testId,
       text,
       order,
+      source: source ?? null,
       options: { create: options },
     },
     include: { options: true },

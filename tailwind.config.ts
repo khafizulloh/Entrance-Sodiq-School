@@ -16,9 +16,16 @@ const config: Config = {
           dark: "#061633",
         },
         gold: {
-          DEFAULT: "#D4AF37",
-          light: "#E6C766",
-          dark: "#B8932E",
+          // Kept as an alias so any future "gold" references still resolve.
+          DEFAULT: "#F58220",
+          light: "#FCA04A",
+          dark: "#D96B0F",
+        },
+        // Sodiq School primary brand orange (from the logo).
+        brand: {
+          DEFAULT: "#F58220",
+          light: "#FCA04A",
+          dark: "#D96B0F",
         },
       },
       fontFamily: {

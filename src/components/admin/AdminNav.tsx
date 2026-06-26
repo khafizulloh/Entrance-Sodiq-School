@@ -26,7 +26,7 @@ export function AdminNav() {
               href={l.href}
               className={`border-b-2 px-4 py-2.5 text-sm font-medium transition ${
                 active
-                  ? "border-gold text-gold"
+                  ? "border-brand text-brand"
                   : "border-transparent text-slate-300 hover:text-white"
               }`}
             >

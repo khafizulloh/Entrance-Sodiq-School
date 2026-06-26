@@ -27,8 +27,8 @@ body {
   .btn-primary {
     @apply btn bg-navy text-white hover:bg-navy-light;
   }
-  .btn-gold {
-    @apply btn bg-gold text-navy-dark hover:bg-gold-dark;
+  .btn-brand {
+    @apply btn bg-brand text-navy-dark hover:bg-brand-dark;
   }
   .btn-outline {
     @apply btn border border-navy/20 bg-white text-navy hover:bg-navy/5;

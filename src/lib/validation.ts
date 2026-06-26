@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GRADES } from "./levels";
+import { GRADES, SOURCES } from "./levels";
 
 /**
  * Shared Zod schemas used for both client-side and server-side validation.
@@ -67,6 +67,8 @@ export const questionInputSchema = z
     testId: z.string().min(1, "Test is required."),
     text: z.string().trim().min(1, "Question text is required."),
     order: z.number().int().min(0).default(0),
+    // Optional publisher source; restricted to the approved list.
+    source: z.enum(SOURCES).optional().nullable(),
     options: z
       .array(optionInputSchema)
       .length(4, "Each question must have exactly 4 options (A, B, C, D)."),

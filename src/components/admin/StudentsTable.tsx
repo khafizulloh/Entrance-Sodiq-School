@@ -202,7 +202,7 @@ export function StudentsTable() {
           >
             Clear filters
           </button>
-          <a className="btn-gold" href={`/api/admin/export?${buildQuery(1)}`}>
+          <a className="btn-brand" href={`/api/admin/export?${buildQuery(1)}`}>
             ⬇ Export CSV
           </a>
           <span className="ml-auto text-sm text-slate-500">
@@ -257,7 +257,7 @@ export function StudentsTable() {
                     <span className="text-slate-400">({r.percentage}%)</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded bg-gold/15 px-2 py-0.5 text-xs font-medium text-gold-dark">
+                    <span className="rounded bg-brand/15 px-2 py-0.5 text-xs font-medium text-brand-dark">
                       {r.level}
                     </span>
                   </td>
@@ -268,7 +268,7 @@ export function StudentsTable() {
                     <div className="flex justify-end gap-2">
                       <Link
                         href={`/admin/students/${r.submissionId}`}
-                        className="text-navy hover:text-gold-dark"
+                        className="text-navy hover:text-brand-dark"
                         title="View details"
                       >
                         View

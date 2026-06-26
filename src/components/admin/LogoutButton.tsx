@@ -18,7 +18,7 @@ export function LogoutButton() {
     <button
       onClick={logout}
       disabled={loading}
-      className="text-sm font-medium text-slate-300 hover:text-gold"
+      className="text-sm font-medium text-slate-300 hover:text-brand"
     >
       {loading ? "Signing out…" : "Sign out"}
     </button>

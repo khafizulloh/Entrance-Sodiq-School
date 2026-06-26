@@ -77,7 +77,7 @@ export default async function AdminDashboardPage() {
                   </span>
                   <div className="h-5 flex-1 overflow-hidden rounded bg-slate-100">
                     <div
-                      className="h-full rounded bg-gold"
+                      className="h-full rounded bg-brand"
                       style={{ width: `${(l.count / maxLevel) * 100}%` }}
                     />
                   </div>

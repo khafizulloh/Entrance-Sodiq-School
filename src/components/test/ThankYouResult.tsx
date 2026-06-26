@@ -25,7 +25,7 @@ export function ThankYouResult() {
 
   return (
     <div className="card mx-auto max-w-lg text-center">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gold/20 text-3xl">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand/20 text-3xl">
         🎉
       </div>
       <h1 className="mt-4 text-2xl font-bold text-navy">Thank you!</h1>
@@ -46,8 +46,8 @@ export function ThankYouResult() {
             <Stat label="Score" value={`${result.score}/${result.totalQuestions}`} />
             <Stat label="Percentage" value={`${result.percentage}%`} />
           </div>
-          <div className="mt-4 rounded-lg bg-gold/15 px-4 py-3">
-            <p className="text-xs uppercase tracking-wide text-gold-dark">
+          <div className="mt-4 rounded-lg bg-brand/15 px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-brand-dark">
               Suggested Level
             </p>
             <p className="text-lg font-bold text-navy">{result.level}</p>

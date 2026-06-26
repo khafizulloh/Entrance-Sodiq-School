@@ -86,7 +86,7 @@ export function Quiz({ test, submitting, onSubmit }: Props) {
         </div>
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
           <div
-            className="h-full bg-gold transition-all"
+            className="h-full bg-brand transition-all"
             style={{ width: `${progressPct}%` }}
           />
         </div>
@@ -96,7 +96,7 @@ export function Quiz({ test, submitting, onSubmit }: Props) {
         {test.questions.map((q, idx) => (
           <div key={q.id} className="card">
             <p className="font-medium text-navy-dark">
-              <span className="mr-2 text-gold-dark">{idx + 1}.</span>
+              <span className="mr-2 text-brand-dark">{idx + 1}.</span>
               {q.text}
             </p>
             <div className="mt-3 space-y-2">
@@ -136,7 +136,7 @@ export function Quiz({ test, submitting, onSubmit }: Props) {
 
       <div className="sticky bottom-0 -mx-4 mt-4 border-t border-slate-200 bg-[var(--background)]/95 px-4 py-3 backdrop-blur">
         <button
-          className="btn-gold w-full"
+          className="btn-brand w-full"
           disabled={submitting}
           onClick={() => {
             if (allAnswered) doSubmit(false);

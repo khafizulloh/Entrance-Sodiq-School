@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Spinner } from "@/components/Spinner";
+import { SOURCES } from "@/lib/levels";
 
 export type OptionInput = {
   label: "A" | "B" | "C" | "D";
@@ -13,6 +14,7 @@ export type QuestionData = {
   id?: string;
   text: string;
   order: number;
+  source: string | null;
   options: OptionInput[];
 };
 
@@ -22,6 +24,7 @@ export function emptyQuestion(order: number): QuestionData {
   return {
     text: "",
     order,
+    source: null,
     options: LABELS.map((label) => ({ label, text: "", isCorrect: false })),
   };
 }
@@ -37,6 +40,7 @@ export function QuestionEditor({
   onSave: (q: QuestionData) => Promise<void>;
 }) {
   const [text, setText] = useState(initial.text);
+  const [source, setSource] = useState<string>(initial.source ?? "");
   const [options, setOptions] = useState<OptionInput[]>(initial.options);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -61,7 +65,12 @@ export function QuestionEditor({
 
     setSaving(true);
     try {
-      await onSave({ ...initial, text: text.trim(), options });
+      await onSave({
+        ...initial,
+        text: text.trim(),
+        source: source || null,
+        options,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save.");
       setSaving(false);
@@ -82,6 +91,25 @@ export function QuestionEditor({
         onChange={(e) => setText(e.target.value)}
         placeholder="Enter the question…"
       />
+
+      <div className="mt-3 max-w-xs">
+        <label className="label">Source (publisher)</label>
+        <select
+          className="input"
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+        >
+          <option value="">— Not set —</option>
+          {SOURCES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-slate-400">
+          Only Cambridge, Oxford, or Pearson materials.
+        </p>
+      </div>
 
       <p className="mt-3 mb-1 text-sm font-medium text-navy-dark">
         Options (select the correct one)

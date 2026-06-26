@@ -44,7 +44,7 @@ export default async function StudentDetailPage({
 
   return (
     <AdminShell>
-      <Link href="/admin/students" className="text-sm text-navy hover:text-gold-dark">
+      <Link href="/admin/students" className="text-sm text-navy hover:text-brand-dark">
         ← Back to students
       </Link>
       <h1 className="mt-2 text-2xl font-bold text-navy">{s.fullName}</h1>
@@ -81,7 +81,7 @@ export default async function StudentDetailPage({
             </div>
             <div className="mt-1 flex justify-between text-sm">
               <span className="text-slate-500">Level</span>
-              <span className="font-bold text-gold-dark">{submission.level}</span>
+              <span className="font-bold text-brand-dark">{submission.level}</span>
             </div>
             <div className="mt-1 flex justify-between text-sm">
               <span className="text-slate-500">Time taken</span>
@@ -106,7 +106,7 @@ export default async function StudentDetailPage({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-medium text-navy-dark">
-                      <span className="mr-1 text-gold-dark">{idx + 1}.</span>
+                      <span className="mr-1 text-brand-dark">{idx + 1}.</span>
                       {a.question.text}
                     </p>
                     <span

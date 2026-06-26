@@ -26,7 +26,7 @@ export async function PATCH(
   if (!parsed.success) {
     return jsonError(parsed.error.errors[0]?.message ?? "Invalid question.");
   }
-  const { text, order, options } = parsed.data;
+  const { text, order, source, options } = parsed.data;
 
   const existing = await prisma.question.findUnique({ where: { id } });
   if (!existing) return jsonError("Question not found.", 404);
@@ -39,6 +39,7 @@ export async function PATCH(
       data: {
         text,
         order,
+        source: source ?? null,
         options: { create: options },
       },
       include: { options: { orderBy: { label: "asc" } } },

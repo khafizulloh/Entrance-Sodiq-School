@@ -23,6 +23,7 @@ type ApiQuestion = {
   id: string;
   text: string;
   order: number;
+  source: string | null;
   options: { id: string; label: string; text: string; isCorrect: boolean }[];
 };
 
@@ -99,6 +100,7 @@ export function QuestionsManager() {
         testId: selectedId,
         text: q.text,
         order: q.order,
+        source: q.source,
         options: q.options,
       }),
     });
@@ -123,6 +125,7 @@ export function QuestionsManager() {
       id: q.id,
       text: q.text,
       order: q.order,
+      source: q.source,
       options: ["A", "B", "C", "D"].map((label) => {
         const found = q.options.find((o) => o.label === label);
         return {
@@ -186,7 +189,7 @@ export function QuestionsManager() {
               </h2>
               {!editing && (
                 <button
-                  className="btn-gold"
+                  className="btn-brand"
                   onClick={() => setEditing(emptyQuestion(questions.length))}
                 >
                   + Add question
@@ -226,7 +229,7 @@ export function QuestionsManager() {
                     <div key={q.id} className="card">
                       <div className="flex items-start justify-between gap-3">
                         <p className="font-medium text-navy-dark">
-                          <span className="mr-1 text-gold-dark">{idx + 1}.</span>
+                          <span className="mr-1 text-brand-dark">{idx + 1}.</span>
                           {q.text}
                         </p>
                         <div className="flex shrink-0 gap-2 text-sm">
@@ -259,6 +262,11 @@ export function QuestionsManager() {
                           </li>
                         ))}
                       </ul>
+                      {q.source && (
+                        <span className="mt-3 inline-block rounded bg-brand/15 px-2 py-0.5 text-xs font-medium text-brand-dark">
+                          Source: {q.source}
+                        </span>
+                      )}
                     </div>
                   ),
                 )

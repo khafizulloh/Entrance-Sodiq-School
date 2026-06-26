@@ -1,19 +1,28 @@
 import Link from "next/link";
+import Image from "next/image";
 
-/** Sodiq School logo mark (text-based, no external image dependency). */
+/**
+ * Sodiq School logo: the shield mark (public/logo.svg) plus the wordmark.
+ * Swap public/logo.svg for the official asset to use the exact artwork.
+ */
 export function Logo({ light = false }: { light?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2.5">
-      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold font-bold text-navy-dark">
-        S
-      </span>
+      <Image
+        src="/logo.svg"
+        alt="Sodiq School logo"
+        width={36}
+        height={42}
+        className="h-9 w-auto"
+        priority
+      />
       <span
         className={`text-lg font-bold leading-tight ${
           light ? "text-white" : "text-navy"
         }`}
       >
         Sodiq School
-        <span className="block text-[10px] font-medium uppercase tracking-wider text-gold">
+        <span className="block text-[10px] font-medium uppercase tracking-wider text-brand">
           Entrance Test
         </span>
       </span>
