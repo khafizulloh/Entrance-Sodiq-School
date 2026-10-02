@@ -28,6 +28,9 @@ export default function HomePage() {
               <Link href="/admin/login" className="btn-outline text-base">
                 Admin Login
               </Link>
+              <Link href="/attendance" className="btn-outline text-base">
+                Teacher Attendance
+              </Link>
             </div>
           </div>
 

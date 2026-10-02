@@ -80,7 +80,7 @@ model Option {
 // Student — personal info collected before the test.
 // ----------------------------------------------------------------------------
 model Student {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   fullName       String
   phone          String
   parentPhone    String
@@ -90,9 +90,9 @@ model Student {
   telegram       String?
   dateOfBirth    DateTime?
   // When true, this student is allowed to retake the test (admin override).
-  allowRetake    Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  allowRetake    Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   submissions Submission[]
 
@@ -138,4 +138,235 @@ model StudentAnswer {
 
   @@index([submissionId])
   @@index([questionId])
+}
+
+// ============================================================================
+// ATTENDANCE TRACKER
+// A second, self-contained area of the app (/attendance) used by teachers and
+// the head teacher to take daily attendance and marks.
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Staff — teachers and the head teacher (admin of the attendance tracker).
+// Login is by a short login id (not email) + password, as requested.
+// ----------------------------------------------------------------------------
+model Staff {
+  id           String   @id @default(cuid())
+  loginId      String   @unique // short id, e.g. "nigina"
+  fullName     String
+  passwordHash String
+  role         String   @default("teacher") // "teacher" | "head"
+  isActive     Boolean  @default(true)
+  telegramId   String? // optional chat id for Telegram notifications
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  groups         Group[]
+  slots          TimetableSlot[]
+  lessons        Lesson[]
+  markedRecords  AttendanceRecord[] @relation("markedBy")
+  requestedMoves MoveRequest[]      @relation("requestedBy")
+  decidedMoves   MoveRequest[]      @relation("decidedBy")
+  uploads        TimetableVersion[] @relation("uploadedBy")
+}
+
+// ----------------------------------------------------------------------------
+// Term — the period attendance is tracked for (2 months for now).
+// ----------------------------------------------------------------------------
+model Term {
+  id        String   @id @default(cuid())
+  name      String
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ----------------------------------------------------------------------------
+// Group — a teaching group (e.g. "5 TOKYO" English, "10 OXFORD" SAT Math).
+// A pupil may belong to one English group AND one SAT Math group.
+// ----------------------------------------------------------------------------
+model Group {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  grade     Int
+  subject   String   @default("ENGLISH") // ENGLISH | SAT_MATH | IELTS | SPEAKING | SAT_ENGLISH
+  room      String?
+  teacherId String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teacher     Staff?          @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  enrollments Enrollment[]
+  slots       TimetableSlot[]
+  lessons     Lesson[]
+  movesFrom   MoveRequest[]   @relation("fromGroup")
+  movesTo     MoveRequest[]   @relation("toGroup")
+
+  @@index([grade])
+  @@index([teacherId])
+}
+
+// ----------------------------------------------------------------------------
+// Pupil — a student on a class list (separate from entrance-test Students).
+// ----------------------------------------------------------------------------
+model Pupil {
+  id         String   @id @default(cuid())
+  firstName  String
+  lastName   String
+  grade      Int
+  externalId String? // school id from the uploaded Excel file
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  enrollments  Enrollment[]
+  records      AttendanceRecord[]
+  moveRequests MoveRequest[]
+
+  @@index([grade])
+  @@index([lastName, firstName])
+}
+
+// ----------------------------------------------------------------------------
+// Enrollment — a pupil's membership of a group over time.
+// A move closes the old enrollment (endDate) and opens a new one.
+// ----------------------------------------------------------------------------
+model Enrollment {
+  id        String    @id @default(cuid())
+  pupilId   String
+  groupId   String
+  startDate DateTime  @db.Date
+  endDate   DateTime? @db.Date // null = still in this group
+  createdAt DateTime  @default(now())
+
+  pupil Pupil @relation(fields: [pupilId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([pupilId])
+  @@index([groupId])
+}
+
+// ----------------------------------------------------------------------------
+// TimetableVersion — each upload of the timetable. `effectiveFrom` means
+// lessons from that date on use this version; earlier dates keep the old one,
+// so past attendance never changes.
+// ----------------------------------------------------------------------------
+model TimetableVersion {
+  id            String   @id @default(cuid())
+  name          String
+  effectiveFrom DateTime @db.Date
+  note          String?
+  uploadedById  String?
+  createdAt     DateTime @default(now())
+
+  uploadedBy Staff?          @relation("uploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  slots      TimetableSlot[]
+
+  @@index([effectiveFrom])
+}
+
+// ----------------------------------------------------------------------------
+// TimetableSlot — one weekly lesson: group + day + period.
+// ----------------------------------------------------------------------------
+model TimetableSlot {
+  id        String  @id @default(cuid())
+  versionId String
+  groupId   String
+  teacherId String?
+  dayOfWeek Int // 1 = Monday ... 5 = Friday
+  period    Int // 1..8
+  subject   String  @default("ENGLISH")
+  room      String?
+
+  version TimetableVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  group   Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  teacher Staff?           @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  lessons Lesson[]
+
+  @@unique([versionId, groupId, dayOfWeek, period])
+  @@index([versionId, teacherId])
+  @@index([groupId])
+}
+
+// ----------------------------------------------------------------------------
+// Lesson — a dated instance of a slot. Created the first time a teacher
+// opens or saves attendance for that group / date / period.
+// ----------------------------------------------------------------------------
+model Lesson {
+  id        String   @id @default(cuid())
+  groupId   String
+  date      DateTime @db.Date
+  period    Int
+  slotId    String?
+  teacherId String?
+  topic     String?
+  createdAt DateTime @default(now())
+
+  group   Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  slot    TimetableSlot?     @relation(fields: [slotId], references: [id], onDelete: SetNull)
+  teacher Staff?             @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  records AttendanceRecord[]
+
+  @@unique([groupId, date, period])
+  @@index([date])
+}
+
+// ----------------------------------------------------------------------------
+// AttendanceRecord — one pupil's attendance + mark for one lesson.
+// `originGroupId` keeps the group the record was taken in, so records that
+// travelled with a moved pupil can be shown in a lighter style.
+// ----------------------------------------------------------------------------
+model AttendanceRecord {
+  id            String   @id @default(cuid())
+  lessonId      String
+  pupilId       String
+  status        String // PRESENT | ABSENT | LATE | EXCUSED
+  mark          Int?
+  note          String?
+  originGroupId String? // group the record was taken in (set when it differs)
+  markedById    String?
+  markedAt      DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  pupil    Pupil  @relation(fields: [pupilId], references: [id], onDelete: Cascade)
+  markedBy Staff? @relation("markedBy", fields: [markedById], references: [id], onDelete: SetNull)
+
+  @@unique([lessonId, pupilId])
+  @@index([pupilId])
+}
+
+// ----------------------------------------------------------------------------
+// MoveRequest — a teacher (or the head teacher) asks to move a pupil to
+// another group. The head teacher approves or rejects; approval can carry
+// the pupil's existing records across.
+// ----------------------------------------------------------------------------
+model MoveRequest {
+  id            String    @id @default(cuid())
+  pupilId       String
+  fromGroupId   String?
+  toGroupId     String
+  reason        String?
+  status        String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  moveRecords   Boolean   @default(true) // carry existing records to the new group
+  recordsMoved  Int       @default(0)
+  requestedById String?
+  decidedById   String?
+  decidedAt     DateTime?
+  decisionNote  String?
+  source        String    @default("TEACHER") // TEACHER | HEAD
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  pupil       Pupil  @relation(fields: [pupilId], references: [id], onDelete: Cascade)
+  fromGroup   Group? @relation("fromGroup", fields: [fromGroupId], references: [id], onDelete: SetNull)
+  toGroup     Group  @relation("toGroup", fields: [toGroupId], references: [id], onDelete: Cascade)
+  requestedBy Staff? @relation("requestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedBy   Staff? @relation("decidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([pupilId])
 }
