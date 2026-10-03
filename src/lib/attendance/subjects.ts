@@ -36,21 +36,19 @@ export function normalizeSubject(value: unknown): Subject {
   return "ENGLISH";
 }
 
-export const ATTENDANCE_STATUSES = ["PRESENT", "ABSENT", "LATE", "EXCUSED"] as const;
+export const ATTENDANCE_STATUSES = ["PRESENT", "ABSENT", "LATE"] as const;
 export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number];
 
 export const STATUS_SHORT: Record<AttendanceStatus, string> = {
   PRESENT: "P",
   ABSENT: "A",
   LATE: "L",
-  EXCUSED: "E",
 };
 
 export const STATUS_LABEL: Record<AttendanceStatus, string> = {
   PRESENT: "Present",
   ABSENT: "Absent",
   LATE: "Late",
-  EXCUSED: "Excused",
 };
 
 /** Statuses that count against a pupil in the "missing most classes" report. */

@@ -14,7 +14,6 @@ export type AbsenceRow = {
   groups: string[];
   absent: number;
   late: number;
-  excused: number;
   lessonsRecorded: number;
   missedPercent: number;
 };
@@ -58,7 +57,6 @@ export async function absenceReport(options: {
         groups: [],
         absent: 0,
         late: 0,
-        excused: 0,
         lessonsRecorded: 0,
         missedPercent: 0,
       };
@@ -67,7 +65,6 @@ export async function absenceReport(options: {
     row.lessonsRecorded++;
     if (record.status === "ABSENT") row.absent++;
     else if (record.status === "LATE") row.late++;
-    else if (record.status === "EXCUSED") row.excused++;
   }
 
   const rows = [...byPupil.values()]

@@ -124,7 +124,6 @@ export default async function HeadReports({
                 <th className="px-4 py-2.5">Groups</th>
                 <th className="px-4 py-2.5 text-right">Absent</th>
                 <th className="px-4 py-2.5 text-right">Late</th>
-                <th className="px-4 py-2.5 text-right">Excused</th>
                 <th className="px-4 py-2.5 text-right">Lessons</th>
                 <th className="px-4 py-2.5 text-right">Missed</th>
               </tr>
@@ -143,7 +142,6 @@ export default async function HeadReports({
                     {row.absent}
                   </td>
                   <td className="px-4 py-2 text-right text-amber-700">{row.late || "—"}</td>
-                  <td className="px-4 py-2 text-right text-sky-700">{row.excused || "—"}</td>
                   <td className="px-4 py-2 text-right text-slate-600">
                     {row.lessonsRecorded}
                   </td>

@@ -22,7 +22,7 @@ export async function GET(req: Request) {
 
   const bytes = buildWorkbook(
     "Absences",
-    ["#", "First Name", "Surname", "Grade", "Groups", "Absent", "Late", "Excused", "Lessons", "Missed %"],
+    ["#", "First Name", "Surname", "Grade", "Groups", "Absent", "Late", "Lessons", "Missed %"],
     rows.map((row, index) => [
       index + 1,
       row.firstName,
@@ -31,7 +31,6 @@ export async function GET(req: Request) {
       row.groups.join(", "),
       row.absent,
       row.late,
-      row.excused,
       row.lessonsRecorded,
       row.missedPercent,
     ]),

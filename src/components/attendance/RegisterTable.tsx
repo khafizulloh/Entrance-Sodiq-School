@@ -9,7 +9,7 @@ import {
   STATUS_SHORT,
   subjectLabel,
 } from "@/lib/attendance/subjects";
-import type { RegisterData } from "@/lib/attendance/register";
+import type { RegisterColumn, RegisterData } from "@/lib/attendance/register";
 import { MoveRequestDialog, type MoveTarget } from "./MoveRequestDialog";
 
 /**
@@ -25,34 +25,32 @@ import { MoveRequestDialog, type MoveTarget } from "./MoveRequestDialog";
 
 type Cell = RegisterData["cells"][string][string];
 
-const STATUS_CYCLE: Array<AttendanceStatus | null> = [
-  "PRESENT",
-  "ABSENT",
-  "LATE",
-  "EXCUSED",
-  null,
-];
+const STATUS_CYCLE: Array<AttendanceStatus | null> = ["PRESENT", "ABSENT", "LATE", null];
 
 const STATUS_STYLE: Record<AttendanceStatus, string> = {
   PRESENT: "bg-green-100 text-green-800 border-green-300",
   ABSENT: "bg-red-100 text-red-700 border-red-300",
   LATE: "bg-amber-100 text-amber-800 border-amber-300",
-  EXCUSED: "bg-sky-100 text-sky-800 border-sky-300",
 };
 
 const TRANSFERRED_STYLE: Record<AttendanceStatus, string> = {
   PRESENT: "bg-green-50 text-green-500 border-green-100",
   ABSENT: "bg-red-50 text-red-400 border-red-100",
   LATE: "bg-amber-50 text-amber-500 border-amber-100",
-  EXCUSED: "bg-sky-50 text-sky-500 border-sky-100",
 };
+
+const UNKNOWN_STYLE = "bg-slate-100 text-slate-500 border-slate-300";
 
 function nextStatus(current: string | undefined): AttendanceStatus | null {
   const index = STATUS_CYCLE.indexOf((current ?? null) as AttendanceStatus | null);
   return STATUS_CYCLE[(index + 1) % STATUS_CYCLE.length];
 }
 
-type PendingEntry = { status?: AttendanceStatus | null; mark?: number | null };
+type PendingEntry = {
+  status?: AttendanceStatus | null;
+  mark?: number | null;
+  note?: string | null;
+};
 
 export function RegisterTable({
   data,
@@ -75,6 +73,11 @@ export function RegisterTable({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [movePupil, setMovePupil] = useState<RegisterData["pupils"][number] | null>(null);
+  const [noteMode, setNoteMode] = useState(false);
+  const [noteTarget, setNoteTarget] = useState<{
+    pupil: RegisterData["pupils"][number];
+    column: RegisterColumn;
+  } | null>(null);
 
   // Keep the local grid in step when the server sends a fresh register.
   useEffect(() => setCells(data.cells), [data.cells]);
@@ -200,6 +203,41 @@ export function RegisterTable({
     queue(column.key, pupilId, { mark });
   }
 
+  function setNote(pupilId: string, column: RegisterColumn, note: string) {
+    if (!canEdit || column.isFuture) return;
+    const trimmed = note.trim();
+    const value = trimmed === "" ? null : trimmed.slice(0, 300);
+
+    setCells((previous) => {
+      const row = { ...(previous[pupilId] ?? {}) };
+      const existing = row[column.key];
+      if (!existing) return previous;
+      row[column.key] = { ...existing, note: value };
+      return { ...previous, [pupilId]: row };
+    });
+    queue(column.key, pupilId, { note: value });
+    setNoteTarget(null);
+  }
+
+  /** In note mode a tap opens the note box instead of changing attendance. */
+  function onCellTap(pupil: RegisterData["pupils"][number], column: RegisterColumn) {
+    if (!noteMode) {
+      cycle(pupil.id, column);
+      return;
+    }
+    const cell = cells[pupil.id]?.[column.key];
+    if (!cell || cell.transferred || column.isFuture) {
+      setError(
+        cell?.transferred
+          ? "That record was taken in the student's previous group."
+          : "Mark the attendance first, then add the note.",
+      );
+      return;
+    }
+    setError(null);
+    setNoteTarget({ pupil, column });
+  }
+
   async function markAllPresent() {
     if (!canEdit || !focusedColumn || focusedColumn.isFuture) return;
     setSaveState("saving");
@@ -307,6 +345,18 @@ export function RegisterTable({
             <SaveBadge state={saveState} />
             <button
               type="button"
+              className={noteMode ? "btn-primary" : "btn-outline"}
+              onClick={() => {
+                setNoteMode(!noteMode);
+                setError(null);
+              }}
+              disabled={!canEdit}
+              title="Tap a cell to write a note about that student for that lesson"
+            >
+              {noteMode ? "Notes on" : "Add notes"}
+            </button>
+            <button
+              type="button"
               className="btn-brand"
               onClick={markAllPresent}
               disabled={!canEdit || !focusedColumn || focusedColumn.isFuture}
@@ -329,7 +379,8 @@ export function RegisterTable({
           <p className="mt-3 text-xs text-slate-500">
             Any lesson that has already happened can be filled in, including ones first
             taken on paper. Pick the month, pick the lesson, then fill the column. Only
-            lessons still to come are locked.
+            lessons still to come are locked. Turn on Add notes to write a note about one
+            student for one lesson — a cell with a note carries an orange dot.
           </p>
         )}
       </div>
@@ -445,24 +496,32 @@ export function RegisterTable({
                         >
                           <button
                             type="button"
-                            onClick={() => cycle(pupil.id, column)}
-                            disabled={!canEdit || column.isFuture || transferred}
-                            title={
+                            onClick={() => onCellTap(pupil, column)}
+                            disabled={
+                              !canEdit || column.isFuture || (transferred && !cell?.note)
+                            }
+                            title={[
                               transferred
                                 ? `Taken in ${cell?.originGroupName ?? "the previous group"}`
                                 : status
-                                  ? STATUS_LABEL[status]
-                                  : "Not taken"
-                            }
-                            className={`h-7 w-8 rounded border text-xs font-bold transition-colors ${
+                                  ? STATUS_LABEL[status] ?? status
+                                  : "Not taken",
+                              cell?.note ? `Note: ${cell.note}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                            className={`relative h-7 w-8 rounded border text-xs font-bold transition-colors ${
                               status
-                                ? styleMap[status]
+                                ? (styleMap[status] ?? UNKNOWN_STYLE)
                                 : "border-slate-200 bg-white text-slate-300 hover:border-brand"
                             } ${transferred ? "cursor-default italic" : ""} ${
                               column.isFuture ? "opacity-40" : ""
-                            }`}
+                            } ${noteMode && !transferred ? "ring-1 ring-brand/40" : ""}`}
                           >
-                            {status ? STATUS_SHORT[status] : "·"}
+                            {status ? STATUS_SHORT[status] ?? "?" : "·"}
+                            {cell?.note && (
+                              <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-brand" />
+                            )}
                           </button>
                         </td>
 
@@ -500,6 +559,16 @@ export function RegisterTable({
       )}
 
       <Legend />
+
+      {noteTarget && (
+        <NoteDialog
+          pupilName={`${noteTarget.pupil.firstName} ${noteTarget.pupil.lastName}`.trim()}
+          lessonLabel={`${columnLabel(noteTarget.column.date)} · period ${noteTarget.column.period}`}
+          value={cells[noteTarget.pupil.id]?.[noteTarget.column.key]?.note ?? ""}
+          onCancel={() => setNoteTarget(null)}
+          onSave={(note) => setNote(noteTarget.pupil.id, noteTarget.column, note)}
+        />
+      )}
 
       {movePupil && (
         <MoveRequestDialog
@@ -544,7 +613,7 @@ function Legend() {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
       <span className="font-semibold uppercase tracking-wider text-slate-400">Key</span>
-      {(["PRESENT", "ABSENT", "LATE", "EXCUSED"] as AttendanceStatus[]).map((status) => (
+      {(["PRESENT", "ABSENT", "LATE"] as AttendanceStatus[]).map((status) => (
         <span key={status} className="flex items-center gap-1.5">
           <span
             className={`inline-flex h-5 w-6 items-center justify-center rounded border text-[11px] font-bold ${STATUS_STYLE[status]}`}
@@ -560,7 +629,66 @@ function Legend() {
         </span>
         Faded = taken in the student&apos;s previous group
       </span>
-      <span>Tap a cell to change: P → A → L → E → blank</span>
+      <span className="flex items-center gap-1.5">
+        <span className="relative inline-flex h-5 w-6 items-center justify-center rounded border border-green-300 bg-green-100 text-[11px] font-bold text-green-800">
+          P
+          <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-brand" />
+        </span>
+        Has a note
+      </span>
+      <span>Tap a cell to change: P → A → L → blank</span>
+    </div>
+  );
+}
+
+/** A short note about one student for one lesson. */
+function NoteDialog({
+  pupilName,
+  lessonLabel,
+  value,
+  onCancel,
+  onSave,
+}: {
+  pupilName: string;
+  lessonLabel: string;
+  value: string;
+  onCancel: () => void;
+  onSave: (note: string) => void;
+}) {
+  const [text, setText] = useState(value);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-navy/50 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <h2 className="text-lg font-bold text-navy">Note</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          {pupilName} · {lessonLabel}
+        </p>
+
+        <textarea
+          className="input mt-4 min-h-[96px]"
+          value={text}
+          maxLength={300}
+          autoFocus
+          onChange={(event) => setText(event.target.value)}
+          placeholder="e.g. Left early, parent called. Or: did not bring the workbook."
+        />
+        <p className="mt-1 text-right text-[11px] text-slate-400">{text.length}/300</p>
+
+        <div className="mt-3 flex gap-2">
+          <button type="button" className="btn-outline flex-1" onClick={onCancel}>
+            Cancel
+          </button>
+          {value && (
+            <button type="button" className="btn-danger" onClick={() => onSave("")}>
+              Remove
+            </button>
+          )}
+          <button type="button" className="btn-brand flex-1" onClick={() => onSave(text)}>
+            Save note
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

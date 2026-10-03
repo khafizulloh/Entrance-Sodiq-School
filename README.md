@@ -207,8 +207,11 @@ The head teacher creates every account and can reset any password.
   **two columns per lesson**: attendance and the mark for that day.
   - **Everyone present** fills the whole column in one tap; the teacher then
     only changes the students who are missing.
-  - Tapping a cell cycles **P → A → L → E → blank** (present, absent, late,
-    excused). Marks are 0–100.
+  - Tapping a cell cycles **P → A → L → blank** (present, absent, late).
+    Marks are 0–100.
+  - **Add notes** turns the grid into note mode: tap a cell to write up to 300
+    characters about that student for that lesson. A cell holding a note
+    carries an orange dot, and the note shows in its tooltip.
   - Changes save on their own; a badge shows *Saving… / Saved*.
   - Browsed **one month at a time** (a term can run four months), with a
     *Whole term* option. Any lesson that has already happened can be filled
@@ -341,6 +344,6 @@ timetable to replace them.
 - **Enrollment** — a pupil's membership of a group, with start and end dates.
 - **TimetableVersion** / **TimetableSlot** — each upload and its weekly lessons.
 - **Lesson** — a dated instance of a slot, created when attendance is first saved.
-- **AttendanceRecord** — one pupil's attendance and mark for one lesson, plus
-  the group it was taken in.
+- **AttendanceRecord** — one pupil's attendance, mark and note for one lesson,
+  plus the group it was taken in.
 - **MoveRequest** — who asked, for whom, to where, and who decided.
