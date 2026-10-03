@@ -79,6 +79,27 @@ const BAND_11: Block = [
   [5, 2],
 ];
 
+// SAT runs alongside the grade 10–11 English block, and the two SAT Math
+// groups are parallel, so a student can be moved between them.
+const SAT_E1: Block = [
+  [2, 1],
+  [2, 2],
+  [4, 3],
+  [4, 4],
+];
+const SAT_E2: Block = [
+  [2, 3],
+  [2, 4],
+  [4, 1],
+  [4, 2],
+];
+const SAT_MATH: Block = [
+  [3, 1],
+  [3, 2],
+  [5, 3],
+  [5, 4],
+];
+
 type SeedGroup = {
   name: string;
   grade: number;
@@ -116,11 +137,12 @@ const GROUPS: SeedGroup[] = [
   { name: "11-E3", grade: 11, subject: "GENERAL_ENGLISH", teacher: "mohigul", block: BAND_11 },
   { name: "11-E4", grade: 11, subject: "GENERAL_ENGLISH", teacher: "muslima", block: BAND_11 },
 
-  // SAT: groups exist so students can be assigned. Times come later.
-  { name: "SAT - E1", grade: 11, subject: "SAT_ENGLISH", teacher: "khafizulloh", block: null },
-  { name: "SAT - E2", grade: 11, subject: "SAT_ENGLISH", teacher: "izzat", block: null },
-  { name: "SAT - M1", grade: 11, subject: "SAT_MATH", teacher: "muhammaddiyor", block: null },
-  { name: "SAT - M2", grade: 11, subject: "SAT_MATH", teacher: "umar", block: null },
+  // SAT English: Tue 1–2 / Thu 3–4 and Tue 3–4 / Thu 1–2.
+  { name: "SAT - E1", grade: 11, subject: "SAT_ENGLISH", teacher: "khafizulloh", block: SAT_E1 },
+  { name: "SAT - E2", grade: 11, subject: "SAT_ENGLISH", teacher: "izzat", block: SAT_E2 },
+  // SAT Math: both groups Wed 1–2 and Fri 3–4.
+  { name: "SAT - M1", grade: 11, subject: "SAT_MATH", teacher: "muhammaddiyor", block: SAT_MATH },
+  { name: "SAT - M2", grade: 11, subject: "SAT_MATH", teacher: "umar", block: SAT_MATH },
 ];
 
 const SAMPLE_STUDENTS: Array<[string, string, number, string, string]> = [
@@ -214,34 +236,57 @@ async function main() {
     });
     groupIdByName.set(group.name, record.id);
   }
-  console.log(`Groups: ${GROUPS.length} (${GROUPS.filter((g) => !g.block).length} SAT groups without times yet).`);
+  const withoutTimes = GROUPS.filter((group) => !group.block).length;
+  console.log(
+    `Groups: ${GROUPS.length}${withoutTimes ? ` (${withoutTimes} without times yet)` : ""}.`,
+  );
 
   // ---- timetable ---------------------------------------------------------
-  const alreadyUploaded = await prisma.timetableVersion.count();
-  if (alreadyUploaded === 0) {
-    const version = await prisma.timetableVersion.create({
+  // Runs again safely: an existing timetable is topped up with any group that
+  // has no lessons on it yet, rather than being replaced.
+  const version =
+    (await prisma.timetableVersion.findFirst({
+      orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
+    })) ??
+    (await prisma.timetableVersion.create({
       data: {
         name: "Starting timetable",
         effectiveFrom: term.startDate,
         note: "Seeded from the school's weekly blocks",
         uploadedById: head.id,
       },
-    });
+    }));
 
-    const slots = GROUPS.flatMap((group) =>
-      (group.block ?? []).map(([dayOfWeek, period]) => ({
-        versionId: version.id,
-        groupId: groupIdByName.get(group.name) as string,
-        teacherId: staffByLogin.get(group.teacher) ?? null,
-        dayOfWeek,
-        period,
-        subject: group.subject,
-      })),
-    );
+  const alreadyTimetabled = new Set(
+    (
+      await prisma.timetableSlot.findMany({
+        where: { versionId: version.id },
+        select: { groupId: true },
+        distinct: ["groupId"],
+      })
+    ).map((slot) => slot.groupId),
+  );
+
+  const slots = GROUPS.filter(
+    (group) => group.block && !alreadyTimetabled.has(groupIdByName.get(group.name) as string),
+  ).flatMap((group) =>
+    (group.block ?? []).map(([dayOfWeek, period]) => ({
+      versionId: version.id,
+      groupId: groupIdByName.get(group.name) as string,
+      teacherId: staffByLogin.get(group.teacher) ?? null,
+      dayOfWeek,
+      period,
+      subject: group.subject,
+    })),
+  );
+
+  if (slots.length > 0) {
     await prisma.timetableSlot.createMany({ data: slots, skipDuplicates: true });
-    console.log(`Timetable: ${slots.length} weekly lessons from ${isoDate(term.startDate)}.`);
+    console.log(
+      `Timetable "${version.name}" (from ${isoDate(version.effectiveFrom)}): ${slots.length} lessons added.`,
+    );
   } else {
-    console.log("Timetable: already present, left as it is.");
+    console.log(`Timetable "${version.name}": every group already has its lessons.`);
   }
 
   // ---- sample students (off unless asked for) -----------------------------

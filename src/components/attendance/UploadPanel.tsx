@@ -44,7 +44,7 @@ export function UploadPanel({ today }: { today: string }) {
       <UploadCard
         type="timetable"
         title="Timetable"
-        description="Saved as a new version that starts on the date you choose. Attendance before that date keeps the old timetable."
+        description="Add a few groups' lessons to the timetable in force, or replace the whole thing from a date you choose. Attendance before that date never changes."
         columns="Group · Day · Period · Teacher · Room"
         needsDate
         today={today}
@@ -73,6 +73,7 @@ function UploadCard({
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [effectiveFrom, setEffectiveFrom] = useState(today ?? "");
+  const [mode, setMode] = useState<"add" | "replace">("add");
   const [createAccounts, setCreateAccounts] = useState(true);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -91,6 +92,7 @@ function UploadCard({
     form.set("type", type);
     form.set("file", file);
     if (needsDate) {
+      form.set("mode", mode);
       form.set("effectiveFrom", effectiveFrom);
       form.set("name", name);
     }
@@ -130,31 +132,73 @@ function UploadCard({
 
       {needsDate && (
         <div className="mt-3 space-y-3">
-          <div>
-            <label className="label" htmlFor={`${type}-from`}>
-              In force from
+          <fieldset className="space-y-2">
+            <legend className="label">What is in this file</legend>
+
+            <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-2.5 text-sm">
+              <input
+                type="radio"
+                name={`${type}-mode`}
+                checked={mode === "add"}
+                onChange={() => setMode("add")}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span>
+                <span className="font-medium text-navy">Some groups, to add</span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  The lessons go onto the timetable in force now. Every group not in
+                  the file keeps its lessons.
+                </span>
+              </span>
             </label>
-            <input
-              id={`${type}-from`}
-              type="date"
-              className="input"
-              value={effectiveFrom}
-              onChange={(event) => setEffectiveFrom(event.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label className="label" htmlFor={`${type}-name`}>
-              Name <span className="font-normal text-slate-400">(optional)</span>
+
+            <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-2.5 text-sm">
+              <input
+                type="radio"
+                name={`${type}-mode`}
+                checked={mode === "replace"}
+                onChange={() => setMode("replace")}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span>
+                <span className="font-medium text-navy">The whole timetable</span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  Saved as a new version from the date below. Any group left out of
+                  the file has no lessons from that date, so include them all.
+                </span>
+              </span>
             </label>
-            <input
-              id={`${type}-name`}
-              className="input"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Term 2 timetable"
-            />
-          </div>
+          </fieldset>
+
+          {mode === "replace" && (
+            <>
+              <div>
+                <label className="label" htmlFor={`${type}-from`}>
+                  In force from
+                </label>
+                <input
+                  id={`${type}-from`}
+                  type="date"
+                  className="input"
+                  value={effectiveFrom}
+                  onChange={(event) => setEffectiveFrom(event.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor={`${type}-name`}>
+                  Name <span className="font-normal text-slate-400">(optional)</span>
+                </label>
+                <input
+                  id={`${type}-name`}
+                  className="input"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Term 2 timetable"
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
 

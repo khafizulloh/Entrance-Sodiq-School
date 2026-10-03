@@ -326,9 +326,19 @@ A student listed in a different group of the same track leaves the old group
 from today. A group named in the sheet that is not on the group list is
 created from its name, with a warning.
 
-**Timetable.** The upload warns about teacher clashes, room clashes and
+**Timetable.** Choose what the file holds:
+
+- *Some groups, to add* — the lessons join the timetable in force now, and
+  every group not in the file keeps its own. This is how a few groups get
+  their times filled in.
+- *The whole timetable* — saved as a new version from a date you pick. Any
+  group left out has no lessons from that date, so the file must hold them
+  all.
+
+Either way the upload warns about teacher clashes, room clashes and
 duplicate rows instead of silently accepting them — joint lessons are fine,
-so these are warnings, not errors.
+so these are warnings, not errors. Uploading the same rows twice adds
+nothing the second time.
 
 ### A new timetable never rewrites the past
 
@@ -380,8 +390,27 @@ the 3 September to 26 December tracking period.
 
 Students are not seeded — upload the real list. Set
 `ATTENDANCE_SEED_SAMPLE_STUDENTS=true` for a handful of made-up ones to click
-around with. SAT groups are created without lessons, because their times are
-not set yet: add them with a timetable upload.
+around with.
+
+The seed is safe to run again: it tops up any group that has no lessons on
+the timetable yet and leaves everything else alone.
+
+The weekly blocks it sets up:
+
+| Groups | Meets |
+| ------ | ----- |
+| 5-E1 … 5-E4 | Mon 1–2, Wed 6–7, Thu 3–4 |
+| 7-E1 … 7-E3 | Tue 3–4, Wed 3–4, Fri 3–4 |
+| 8-E1 … 8-E3 | Tue 1–2, Thu 1–2, Fri 7–8 |
+| 9-E1 … 9-E4 | Mon 3–4, Wed 1–2, Thu 7–8 |
+| 11-E1 … 11-E4 | Mon 5, Mon 7, Tue 7–8, Fri 1–2 |
+| SAT - E1 | Tue 1–2, Thu 3–4 |
+| SAT - E2 | Tue 3–4, Thu 1–2 |
+| SAT - M1 and SAT - M2 | Wed 1–2, Fri 3–4 |
+
+No teacher is double-booked, and no student can be: every combination of a
+General English group with a SAT English and a SAT Math group is free of
+clashes.
 
 ## Attendance tables
 

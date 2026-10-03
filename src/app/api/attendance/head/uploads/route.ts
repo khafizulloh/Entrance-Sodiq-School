@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, requireHead } from "@/lib/attendance/auth";
-import { isValidIsoDate, schoolToday, toDbDate } from "@/lib/attendance/dates";
+import { isValidIsoDate, schoolToday, toDbDate, toIsoDate } from "@/lib/attendance/dates";
 import {
   type ParsedSheet,
   parseDay,
@@ -17,6 +17,7 @@ import {
   parseGroupName,
   subjectLabel,
 } from "@/lib/attendance/subjects";
+import { versionForDate } from "@/lib/attendance/timetable";
 
 /**
  * Excel uploads: the group list with teachers, the student list, and the
@@ -121,15 +122,18 @@ export async function POST(req: Request) {
   if (type === "timetable") {
     const name =
       String(form.get("name") ?? "").trim() || `Timetable uploaded ${schoolToday()}`;
+    const mode = String(form.get("mode") ?? "add") === "replace" ? "replace" : "add";
     const effectiveFrom = String(form.get("effectiveFrom") ?? "").trim();
-    if (!isValidIsoDate(effectiveFrom)) {
+
+    if (mode === "replace" && !isValidIsoDate(effectiveFrom)) {
       return NextResponse.json(
-        { error: "Choose the date this timetable starts from." },
+        { error: "Choose the date the new timetable starts from." },
         { status: 400 },
       );
     }
     return NextResponse.json(
       await importTimetable(sheet, {
+        mode,
         name,
         effectiveFrom,
         uploadedById: auth.session.sub,
@@ -499,7 +503,12 @@ async function importStudents(sheet: ParsedSheet): Promise<UploadReport> {
 // ---------------------------------------------------------------------------
 async function importTimetable(
   sheet: ParsedSheet,
-  options: { name: string; effectiveFrom: string; uploadedById: string },
+  options: {
+    mode: "add" | "replace";
+    name: string;
+    effectiveFrom: string;
+    uploadedById: string;
+  },
 ): Promise<UploadReport> {
   const rows = sheet.rows;
   const report: UploadReport = {
@@ -515,8 +524,17 @@ async function importTimetable(
     skipped: 0,
     errors: [],
     warnings: [],
-    note: `In force from ${options.effectiveFrom}. Attendance before that date keeps the previous timetable.`,
   };
+
+  // Adding tops up the timetable already in force, so a sheet holding only a
+  // few groups does not take every other group's lessons away.
+  const target =
+    options.mode === "add"
+      ? ((await versionForDate(schoolToday())) ??
+        (await prisma.timetableVersion.findFirst({
+          orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
+        })))
+      : null;
 
   const [groups, index] = await Promise.all([
     prisma.group.findMany({
@@ -538,6 +556,23 @@ async function importTimetable(
   const seen = new Set<string>(); // group + day + period
   const teacherBusy = new Map<string, number>();
   const roomBusy = new Map<string, number>();
+
+  // When adding, the lessons already on the timetable count as taken.
+  if (target) {
+    const existing = await prisma.timetableSlot.findMany({
+      where: { versionId: target.id },
+      select: { groupId: true, teacherId: true, dayOfWeek: true, period: true, room: true },
+    });
+    for (const slot of existing) {
+      seen.add(`${slot.groupId}|${slot.dayOfWeek}|${slot.period}`);
+      if (slot.teacherId) {
+        teacherBusy.set(`${slot.teacherId}|${slot.dayOfWeek}|${slot.period}`, 0);
+      }
+      if (slot.room) {
+        roomBusy.set(`${keyOf(slot.room)}|${slot.dayOfWeek}|${slot.period}`, 0);
+      }
+    }
+  }
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -572,7 +607,7 @@ async function importTimetable(
       report.skipped++;
       report.warnings.push({
         row: rowNumber,
-        message: `${group.name} already has a lesson on day ${dayOfWeek} period ${period}.`,
+        message: `${group.name} already has a lesson on day ${dayOfWeek} period ${period}, so this row was left out.`,
       });
       continue;
     }
@@ -596,10 +631,12 @@ async function importTimetable(
     if (teacherId) {
       const busyKey = `${teacherId}|${dayOfWeek}|${period}`;
       const firstRow = teacherBusy.get(busyKey);
-      if (firstRow) {
+      if (firstRow !== undefined) {
         report.warnings.push({
           row: rowNumber,
-          message: `That teacher is already teaching at day ${dayOfWeek} period ${period} (row ${firstRow}).`,
+          message: `That teacher is already teaching at day ${dayOfWeek} period ${period} ${
+            firstRow ? `(row ${firstRow})` : "on the current timetable"
+          }.`,
         });
       } else {
         teacherBusy.set(busyKey, rowNumber);
@@ -608,10 +645,12 @@ async function importTimetable(
     if (room) {
       const busyKey = `${keyOf(room)}|${dayOfWeek}|${period}`;
       const firstRow = roomBusy.get(busyKey);
-      if (firstRow) {
+      if (firstRow !== undefined) {
         report.warnings.push({
           row: rowNumber,
-          message: `Room ${room} is already in use at day ${dayOfWeek} period ${period} (row ${firstRow}). Joint lessons are fine.`,
+          message: `Room ${room} is already in use at day ${dayOfWeek} period ${period} ${
+            firstRow ? `(row ${firstRow})` : "on the current timetable"
+          }. Joint lessons are fine.`,
         });
       } else {
         roomBusy.set(busyKey, rowNumber);
@@ -631,11 +670,24 @@ async function importTimetable(
     return trimIssues(report);
   }
 
+  if (options.mode === "add" && target) {
+    const added = await prisma.timetableSlot.createMany({
+      data: slots.map((slot) => ({ ...slot, versionId: target.id })),
+      skipDuplicates: true,
+    });
+    report.created = added.count;
+    report.note = `Added to "${target.name}", in force from ${toIsoDate(target.effectiveFrom)}. Every other group's lessons were left alone.`;
+    return trimIssues(report);
+  }
+
+  const startsOn =
+    options.mode === "replace" ? options.effectiveFrom : schoolToday();
+
   await prisma.$transaction(async (tx) => {
     const version = await tx.timetableVersion.create({
       data: {
         name: options.name,
-        effectiveFrom: toDbDate(options.effectiveFrom),
+        effectiveFrom: toDbDate(startsOn),
         uploadedById: options.uploadedById,
         note: `${slots.length} lessons`,
       },
@@ -647,5 +699,9 @@ async function importTimetable(
   });
 
   report.created = slots.length;
+  report.note =
+    options.mode === "replace"
+      ? `This is the whole timetable from ${startsOn}. Attendance before that date keeps the previous timetable.`
+      : `No timetable existed, so one was created starting ${startsOn}.`;
   return trimIssues(report);
 }
