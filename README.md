@@ -326,8 +326,16 @@ A group's name says what it is, so there is no Subject column:
 
 **Students.** One row per student, with up to three groups: `Group | Q1` is
 their General English group, `SAT Eng` and `SAT Math` are optional and
-independent — a student can take one, both or neither. A student already on
-file is updated, not duplicated (matched on UID, otherwise on name + grade).
+independent — a student can take one, both or neither.
+
+Nobody is created twice. Rows are matched on UID where there is one and on
+name + grade otherwise, both against the students already on file and
+against the other rows of the same upload. Two rows for one student — a
+second row carrying their SAT groups, or the same child typed twice — become
+one student with the groups from every row, and the report names both rows.
+Where two different children really do share a name and a grade, the upload
+says so and asks for UIDs to tell them apart.
+
 A student listed in a different group of the same track leaves the old group
 from today. A group named in the sheet that is not on the group list is
 created from its name, with a warning.

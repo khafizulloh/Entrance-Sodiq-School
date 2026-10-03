@@ -544,10 +544,77 @@ async function importStudents(
     }
   }
 
-  // ---- 3. who is already on file ----------------------------------------
-  onProgress("Matching against the students you already have", 0, intents.length);
-  const uids = intents.map((intent) => intent.externalId).filter(Boolean) as string[];
-  const grades = [...new Set(intents.map((intent) => intent.grade))];
+  // ---- 3. one entry per student, in the file and on file -----------------
+  //
+  // A list can name the same student on two rows — a second row for their
+  // SAT groups, or the same child typed twice. Those rows are folded into
+  // one student here, before anything is written, so an upload can never
+  // create the same child twice.
+  onProgress("Looking for repeated rows", 0, intents.length);
+
+  type Student = {
+    rows: StudentIntent[];
+    firstName: string;
+    lastName: string;
+    grade: number;
+    className: string | null;
+    externalId: string | null;
+    /** One group per track, the last one named winning. */
+    tracks: Map<Subject, string>;
+  };
+
+  const students: Student[] = [];
+  const byUidKey = new Map<string, Student>();
+  const byNameKey = new Map<string, Student>();
+
+  for (const intent of intents) {
+    const uidKey = intent.externalId ? `uid:${intent.externalId.trim().toLowerCase()}` : null;
+    const nKey = nameKey(intent.firstName, intent.lastName, intent.grade);
+
+    let student = (uidKey ? byUidKey.get(uidKey) : undefined) ?? byNameKey.get(nKey);
+    if (!student) {
+      student = {
+        rows: [],
+        firstName: intent.firstName,
+        lastName: intent.lastName,
+        grade: intent.grade,
+        className: intent.className,
+        externalId: intent.externalId,
+        tracks: new Map(),
+      };
+      students.push(student);
+    }
+
+    student.rows.push(intent);
+    // Later rows fill in anything the earlier ones left blank.
+    student.firstName = intent.firstName || student.firstName;
+    student.lastName = intent.lastName || student.lastName;
+    student.className = intent.className ?? student.className;
+    student.externalId = intent.externalId ?? student.externalId;
+    intent.groups.forEach((name, index) => {
+      student.tracks.set(intent.expected[index], name);
+    });
+
+    if (uidKey) byUidKey.set(uidKey, student);
+    byNameKey.set(nameKey(student.firstName, student.lastName, student.grade), student);
+  }
+
+  for (const student of students) {
+    if (student.rows.length < 2) continue;
+    const [first, ...rest] = student.rows;
+    report.skipped += rest.length;
+    report.warnings.push({
+      row: rest[0].rowNumber,
+      message: `${student.firstName} ${student.lastName} (grade ${student.grade}) is on row ${first.rowNumber} as well as row${
+        rest.length > 1 ? "s" : ""
+      } ${rest.map((row) => row.rowNumber).join(", ")}. Counted once, with the groups from every row.`,
+    });
+  }
+
+  // ---- matching against the students already on file ---------------------
+  onProgress("Matching against the students you already have", 0, students.length);
+  const uids = students.map((student) => student.externalId).filter(Boolean) as string[];
+  const grades = [...new Set(students.map((student) => student.grade))];
 
   const [byUidRows, byGradeRows] = await Promise.all([
     uids.length > 0
@@ -558,36 +625,47 @@ async function importStudents(
 
   const byUid = new Map(byUidRows.map((pupil) => [pupil.externalId as string, pupil]));
   const byName = new Map<string, (typeof byGradeRows)[number]>();
+  const duplicatesOnFile = new Set<string>();
   for (const pupil of byGradeRows) {
     const key = nameKey(pupil.firstName, pupil.lastName, pupil.grade);
-    if (!byName.has(key)) byName.set(key, pupil);
+    if (byName.has(key)) duplicatesOnFile.add(`${pupil.firstName} ${pupil.lastName} (grade ${pupil.grade})`);
+    else byName.set(key, pupil);
   }
 
-  type Resolved = { intent: StudentIntent; pupilId: string };
+  type Resolved = { student: Student; pupilId: string };
   const resolved: Resolved[] = [];
-  const toCreate: StudentIntent[] = [];
-  const toUpdate: Array<{ id: string; intent: StudentIntent }> = [];
+  const toCreate: Student[] = [];
+  const toUpdate: Array<{ id: string; student: Student }> = [];
 
-  for (const intent of intents) {
+  for (const student of students) {
     const existing =
-      (intent.externalId ? byUid.get(intent.externalId) : undefined) ??
-      byName.get(nameKey(intent.firstName, intent.lastName, intent.grade));
+      (student.externalId ? byUid.get(student.externalId) : undefined) ??
+      byName.get(nameKey(student.firstName, student.lastName, student.grade));
 
     if (!existing) {
-      toCreate.push(intent);
+      toCreate.push(student);
       continue;
     }
 
-    const changed =
-      existing.firstName !== intent.firstName ||
-      existing.lastName !== intent.lastName ||
-      existing.grade !== intent.grade ||
-      !existing.isActive ||
-      (intent.className !== null && existing.className !== intent.className) ||
-      (intent.externalId !== null && existing.externalId !== intent.externalId);
+    // Already on file under this name in this grade, so warn before
+    // silently merging two different children with the same name.
+    if (duplicatesOnFile.has(`${existing.firstName} ${existing.lastName} (grade ${existing.grade})`)) {
+      report.warnings.push({
+        row: student.rows[0].rowNumber,
+        message: `There is more than one ${existing.firstName} ${existing.lastName} in grade ${existing.grade} already. This row was matched to one of them — give them UIDs to tell them apart.`,
+      });
+    }
 
-    if (changed) toUpdate.push({ id: existing.id, intent });
-    resolved.push({ intent, pupilId: existing.id });
+    const changed =
+      existing.firstName !== student.firstName ||
+      existing.lastName !== student.lastName ||
+      existing.grade !== student.grade ||
+      !existing.isActive ||
+      (student.className !== null && existing.className !== student.className) ||
+      (student.externalId !== null && existing.externalId !== student.externalId);
+
+    if (changed) toUpdate.push({ id: existing.id, student });
+    resolved.push({ student, pupilId: existing.id });
     report.updated++;
   }
 
@@ -595,17 +673,17 @@ async function importStudents(
   if (toCreate.length > 0) {
     onProgress("Adding new students", 0, toCreate.length);
     const createdPupils = await prisma.pupil.createManyAndReturn({
-      data: toCreate.map((intent) => ({
-        firstName: intent.firstName,
-        lastName: intent.lastName,
-        grade: intent.grade,
-        className: intent.className,
-        externalId: intent.externalId,
+      data: toCreate.map((student) => ({
+        firstName: student.firstName,
+        lastName: student.lastName,
+        grade: student.grade,
+        className: student.className,
+        externalId: student.externalId,
       })),
       select: { id: true },
     });
     createdPupils.forEach((pupil, index) => {
-      resolved.push({ intent: toCreate[index], pupilId: pupil.id });
+      resolved.push({ student: toCreate[index], pupilId: pupil.id });
     });
     report.created = createdPupils.length;
     onProgress("Adding new students", createdPupils.length, createdPupils.length);
@@ -621,12 +699,14 @@ async function importStudents(
           prisma.pupil.update({
             where: { id: entry.id },
             data: {
-              firstName: entry.intent.firstName,
-              lastName: entry.intent.lastName,
-              grade: entry.intent.grade,
+              firstName: entry.student.firstName,
+              lastName: entry.student.lastName,
+              grade: entry.student.grade,
               isActive: true,
-              ...(entry.intent.className ? { className: entry.intent.className } : {}),
-              ...(entry.intent.externalId ? { externalId: entry.intent.externalId } : {}),
+              ...(entry.student.className ? { className: entry.student.className } : {}),
+              ...(entry.student.externalId
+                ? { externalId: entry.student.externalId }
+                : {}),
             },
           }),
         ),
@@ -685,23 +765,25 @@ async function importStudents(
   }
 
   for (const entry of resolved) {
+    // Two rows that turned out to be the same child already share one entry,
+    // but two different children can still match the same record on file.
     if (seenPupils.has(entry.pupilId)) {
       report.warnings.push({
-        row: entry.intent.rowNumber,
-        message: `${entry.intent.firstName} ${entry.intent.lastName} is on the list more than once. The last row wins.`,
+        row: entry.student.rows[0].rowNumber,
+        message: `${entry.student.firstName} ${entry.student.lastName} matches a student already matched by an earlier row. Give them UIDs to tell them apart.`,
       });
     }
     seenPupils.add(entry.pupilId);
 
-    entry.intent.groups.forEach((name, index) => {
+    const rowNumber = entry.student.rows[0].rowNumber;
+    for (const [track, name] of entry.student.tracks) {
       const group = groupByName.get(keyOf(name));
-      if (!group) return;
+      if (!group) continue;
 
-      const expected = entry.intent.expected[index];
-      if (group.subject !== expected) {
+      if (group.subject !== track) {
         report.warnings.push({
-          row: entry.intent.rowNumber,
-          message: `"${group.name}" is a ${subjectLabel(group.subject)} group but sits in the ${subjectLabel(expected)} column. Check the sheet.`,
+          row: rowNumber,
+          message: `"${group.name}" is a ${subjectLabel(group.subject)} group but sits in the ${subjectLabel(track)} column. Check the sheet.`,
         });
       }
 
@@ -725,7 +807,7 @@ async function importStudents(
         ...list.filter((place) => place.subject !== group.subject),
         { id: alreadyThere ? "kept" : null, groupId: group.id, subject: group.subject },
       ]);
-    });
+    }
   }
 
   const ending = [...toEnd];
