@@ -10,13 +10,13 @@ export default async function TeacherGroupRegister({
   searchParams,
 }: {
   params: Promise<{ groupId: string }>;
-  searchParams: Promise<{ date?: string; period?: string }>;
+  searchParams: Promise<{ date?: string; period?: string; month?: string }>;
 }) {
   const session = await getStaffSession();
   if (!session) redirect("/attendance/login");
 
   const { groupId } = await params;
-  const { date, period } = await searchParams;
+  const { date, period, month } = await searchParams;
 
   return (
     <GroupRegisterView
@@ -24,6 +24,7 @@ export default async function TeacherGroupRegister({
       session={session}
       date={date}
       period={period}
+      month={month}
       backHref="/attendance/teacher"
     />
   );

@@ -2,7 +2,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import type { StaffSession } from "@/lib/attendance/auth";
-import { addDays, longDateLabel, schoolToday } from "@/lib/attendance/dates";
+import {
+  type MonthKey,
+  addDays,
+  maxDate,
+  minDate,
+  monthEnd,
+  monthKeyOf,
+  monthLabel,
+  monthStart,
+  monthsBetween,
+  schoolToday,
+  toIsoDate,
+} from "@/lib/attendance/dates";
 import { buildRegister, columnKey } from "@/lib/attendance/register";
 import { subjectLabel } from "@/lib/attendance/subjects";
 import { activeTerm } from "@/lib/attendance/timetable";
@@ -13,18 +25,24 @@ import type { MoveTarget } from "./MoveRequestDialog";
 /**
  * One group's register, shared by the teacher and head-teacher routes.
  * The head teacher can open any group; a teacher only their own.
+ *
+ * A term can run for four months, so the register is browsed one month at a
+ * time. Any month of the term can be opened and filled in, which is how
+ * lessons already recorded on paper get typed in.
  */
 export async function GroupRegisterView({
   groupId,
   session,
   date,
   period,
+  month,
   backHref,
 }: {
   groupId: string;
   session: StaffSession;
   date?: string;
   period?: string;
+  month?: string;
   backHref: string;
 }) {
   const group = await prisma.group.findUnique({
@@ -60,8 +78,25 @@ export async function GroupRegisterView({
 
   const today = schoolToday();
   const term = await activeTerm();
-  const from = term ? term.startDate.toISOString().slice(0, 10) : addDays(today, -45);
-  const to = term ? term.endDate.toISOString().slice(0, 10) : today;
+  const termFrom = term ? toIsoDate(term.startDate) : addDays(today, -45);
+  const termTo = term ? toIsoDate(term.endDate) : today;
+
+  // Which month to show: the one asked for, else the month of the lesson that
+  // was tapped, else this month — always inside the term.
+  const months = monthsBetween(termFrom, termTo);
+  const ALL = "ALL";
+  const wanted =
+    month && (month === ALL || months.includes(month))
+      ? month
+      : date && months.includes(monthKeyOf(date))
+        ? monthKeyOf(date)
+        : months.includes(monthKeyOf(today))
+          ? monthKeyOf(today)
+          : (months[months.length - 1] ?? monthKeyOf(today));
+
+  const from =
+    wanted === ALL ? termFrom : maxDate(termFrom, monthStart(wanted as MonthKey));
+  const to = wanted === ALL ? termTo : minDate(termTo, monthEnd(wanted as MonthKey));
 
   const register = await buildRegister(groupId, from, to);
   if (!register) notFound();
@@ -109,7 +144,7 @@ export async function GroupRegisterView({
         action={
           <div className="flex items-center gap-2">
             <span className="hidden text-xs text-slate-500 sm:block">
-              {taken}/{past} lessons recorded · {longDateLabel(today)}
+              {taken}/{past} lessons recorded this month
             </span>
             <Link href={backHref} className="btn-outline">
               Back
@@ -123,6 +158,8 @@ export async function GroupRegisterView({
         moveTargets={moveTargets}
         focusKey={focusKey}
         canEdit={canEdit}
+        months={months.map((key) => ({ key, label: monthLabel(key) }))}
+        selectedMonth={wanted}
       />
     </StaffShell>
   );

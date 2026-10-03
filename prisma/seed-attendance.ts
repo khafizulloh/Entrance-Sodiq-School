@@ -178,19 +178,22 @@ async function main() {
   }
   console.log(`Staff: 1 head teacher + ${TEACHERS.length} teachers.`);
 
-  // ---- term (two months from today) --------------------------------------
-  const start = new Date();
-  const startIso = isoDate(start);
-  const end = new Date(start);
-  end.setMonth(end.getMonth() + 2);
-  const endIso = isoDate(end);
+  // ---- term: 3 September to 26 December of the current school year --------
+  const now = new Date();
+  // Before 3 September we are still in last year's term.
+  const schoolYear =
+    now.getMonth() > 7 || (now.getMonth() === 8 && now.getDate() >= 3)
+      ? now.getFullYear()
+      : now.getFullYear() - 1;
+  const startIso = `${schoolYear}-09-03`;
+  const endIso = `${schoolYear}-12-26`;
 
   const existingTerm = await prisma.term.findFirst({ where: { isActive: true } });
   const term =
     existingTerm ??
     (await prisma.term.create({
       data: {
-        name: `${start.toLocaleString("en-GB", { month: "long" })}–${end.toLocaleString("en-GB", { month: "long" })}`,
+        name: `September–December ${schoolYear}`,
         startDate: dbDate(startIso),
         endDate: dbDate(endIso),
         isActive: true,

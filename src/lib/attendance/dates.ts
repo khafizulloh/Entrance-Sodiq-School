@@ -116,3 +116,59 @@ export function longDateLabel(iso: IsoDate): string {
 export function isValidIsoDate(value: unknown): value is IsoDate {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
+
+// ---------------------------------------------------------------------------
+// Months — the register is browsed one month at a time, because a term can
+// run for four months and nobody wants 200 columns on screen at once.
+// ---------------------------------------------------------------------------
+
+export type MonthKey = string; // "2026-09"
+
+export function monthKeyOf(iso: IsoDate): MonthKey {
+  return iso.slice(0, 7);
+}
+
+export function monthStart(key: MonthKey): IsoDate {
+  return `${key}-01`;
+}
+
+export function monthEnd(key: MonthKey): IsoDate {
+  const [year, month] = key.split("-").map(Number);
+  // Day 0 of the next month is the last day of this one.
+  const last = new Date(Date.UTC(year, month, 0));
+  return toIsoDate(last);
+}
+
+export function monthLabel(key: MonthKey): string {
+  const [year, month] = key.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  return `${date.toLocaleString("en-GB", { month: "long", timeZone: "UTC" })} ${year}`;
+}
+
+/** Every month touched by a date range, oldest first. */
+export function monthsBetween(from: IsoDate, to: IsoDate): MonthKey[] {
+  const out: MonthKey[] = [];
+  let [year, month] = from.split("-").map(Number);
+  const last = monthKeyOf(to);
+  for (let i = 0; i < 60; i++) {
+    const key = `${year}-${String(month).padStart(2, "0")}`;
+    out.push(key);
+    if (key >= last) break;
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return out;
+}
+
+/** The later of two dates. */
+export function maxDate(a: IsoDate, b: IsoDate): IsoDate {
+  return a > b ? a : b;
+}
+
+/** The earlier of two dates. */
+export function minDate(a: IsoDate, b: IsoDate): IsoDate {
+  return a < b ? a : b;
+}

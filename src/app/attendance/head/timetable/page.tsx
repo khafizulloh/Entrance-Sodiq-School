@@ -2,6 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeading, StaffShell } from "@/components/attendance/StaffShell";
 import { TimetableGrid } from "@/components/attendance/TimetableGrid";
+import {
+  TimetableVersions,
+  type VersionRow,
+} from "@/components/attendance/TimetableVersions";
 import { getStaffSession } from "@/lib/attendance/auth";
 import { schoolNow, shortDayName, toIsoDate } from "@/lib/attendance/dates";
 import { currentPeriod } from "@/lib/attendance/periods";
@@ -47,6 +51,20 @@ export default async function HeadTimetable() {
     (version) => toIsoDate(version.effectiveFrom) <= now.date,
   );
 
+  const versionRows: VersionRow[] = versions.map((version, index) => ({
+    id: version.id,
+    name: version.name,
+    effectiveFrom: toIsoDate(version.effectiveFrom),
+    slotCount: version._count.slots,
+    uploadedBy: version.uploadedBy?.fullName ?? null,
+    state:
+      index === inForceIndex
+        ? "in-force"
+        : toIsoDate(version.effectiveFrom) > now.date
+          ? "later"
+          : "replaced",
+  }));
+
   return (
     <StaffShell
       role="head"
@@ -78,49 +96,12 @@ export default async function HeadTimetable() {
             <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-slate-500">
               Versions
             </h2>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-              <table className="min-w-full text-sm">
-                <thead className="bg-navy text-left text-xs uppercase tracking-wider text-white">
-                  <tr>
-                    <th className="px-4 py-2.5">Name</th>
-                    <th className="px-4 py-2.5">In force from</th>
-                    <th className="px-4 py-2.5">Lessons</th>
-                    <th className="px-4 py-2.5">Uploaded by</th>
-                    <th className="px-4 py-2.5" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {versions.map((version, index) => {
-                    const from = toIsoDate(version.effectiveFrom);
-                    const inForce = index === inForceIndex;
-                    return (
-                      <tr key={version.id} className="border-t border-slate-100">
-                        <td className="px-4 py-2.5 font-medium text-navy">{version.name}</td>
-                        <td className="px-4 py-2.5 text-slate-600">{from}</td>
-                        <td className="px-4 py-2.5 text-slate-600">{version._count.slots}</td>
-                        <td className="px-4 py-2.5 text-slate-600">
-                          {version.uploadedBy?.fullName ?? "—"}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          {inForce ? (
-                            <span className="rounded-full bg-brand/20 px-2.5 py-0.5 text-xs font-semibold text-brand-dark">
-                              In force now
-                            </span>
-                          ) : from > now.date ? (
-                            <span className="text-xs text-slate-500">starts later</span>
-                          ) : (
-                            <span className="text-xs text-slate-400">replaced</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <TimetableVersions versions={versionRows} />
             <p className="mt-2 text-xs text-slate-500">
               Registers use the version in force on each date, so uploading a new
-              timetable never changes attendance that was already taken.
+              timetable never changes attendance that was already taken. Change a
+              start date to make lessons appear for earlier dates, for example when
+              typing in registers that were kept on paper.
             </p>
           </section>
 

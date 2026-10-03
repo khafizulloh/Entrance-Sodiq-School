@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { PERIODS } from "@/lib/attendance/periods";
-import { shortDayName } from "@/lib/attendance/dates";
+import { dayName, shortDayName } from "@/lib/attendance/dates";
 import { subjectLabel } from "@/lib/attendance/subjects";
 import type { ResolvedSlot } from "@/lib/attendance/timetable";
 
 /**
- * The weekly timetable, periods down the side and Monday–Friday across.
+ * The weekly timetable: days down the side, periods 1–8 across the top —
+ * the way the school's own timetable is laid out.
+ *
  * Tapping a lesson opens that group's register. The lesson running now is
  * ringed in Sodiq orange.
  */
@@ -26,33 +28,50 @@ export function TimetableGrid({
 
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-      <table className="w-full min-w-[640px] border-collapse text-sm">
+      <table className="w-full min-w-[1000px] border-collapse text-sm">
         <thead>
           <tr className="bg-navy text-white">
-            <th className="w-28 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider">
-              Period
+            <th className="sticky left-0 z-10 w-24 bg-navy px-2 py-2 text-left text-xs font-semibold uppercase tracking-wider">
+              Day
             </th>
-            {days.map((day) => (
+            {PERIODS.map((period) => (
               <th
-                key={day}
-                className={`px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${
-                  day === currentDay ? "bg-navy-light text-brand" : ""
+                key={period.index}
+                className={`px-2 py-2 text-left text-xs font-semibold ${
+                  period.index === currentPeriod ? "bg-navy-light text-brand" : ""
                 }`}
               >
-                {shortDayName(day)}
+                <span className="block uppercase tracking-wider">
+                  Period {period.index}
+                </span>
+                <span className="block text-[10px] font-medium opacity-75">
+                  {period.label}
+                </span>
               </th>
             ))}
           </tr>
         </thead>
+
         <tbody>
-          {PERIODS.map((period) => (
-            <tr key={period.index} className="border-t border-slate-100">
-              <th className="bg-slate-50 px-2 py-2 text-left align-top">
-                <span className="block text-sm font-bold text-navy">{period.index}</span>
-                <span className="block text-[11px] text-slate-500">{period.label}</span>
+          {days.map((day) => (
+            <tr key={day} className="border-t border-slate-100">
+              <th
+                className={`sticky left-0 z-10 px-2 py-2 text-left align-top ${
+                  day === currentDay ? "bg-brand/15" : "bg-slate-50"
+                }`}
+              >
+                <span className="block text-sm font-bold text-navy">
+                  <span className="hidden sm:inline">{dayName(day)}</span>
+                  <span className="sm:hidden">{shortDayName(day)}</span>
+                </span>
+                {day === currentDay && (
+                  <span className="block text-[10px] font-semibold uppercase tracking-wider text-brand-dark">
+                    Today
+                  </span>
+                )}
               </th>
 
-              {days.map((day) => {
+              {PERIODS.map((period) => {
                 const slots = (week[day] ?? []).filter(
                   (slot) => slot.period === period.index,
                 );
@@ -60,9 +79,11 @@ export function TimetableGrid({
 
                 return (
                   <td
-                    key={day}
+                    key={period.index}
                     className={`px-1.5 py-1.5 align-top ${
-                      day === currentDay ? "bg-brand/5" : ""
+                      day === currentDay || period.index === currentPeriod
+                        ? "bg-brand/5"
+                        : ""
                     }`}
                   >
                     {slots.length === 0 ? (

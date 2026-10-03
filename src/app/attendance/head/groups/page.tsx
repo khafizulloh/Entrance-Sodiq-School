@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { GroupTeacherPicker } from "@/components/attendance/GroupTeacherPicker";
 import { PageHeading, StaffShell } from "@/components/attendance/StaffShell";
 import { getStaffSession } from "@/lib/attendance/auth";
 import { schoolToday } from "@/lib/attendance/dates";
@@ -14,7 +15,7 @@ export default async function HeadGroups() {
   if (!session) redirect("/attendance/login");
   if (session.role !== "head") redirect("/attendance/teacher");
 
-  const [groups, pending] = await Promise.all([
+  const [groups, teachers, pending] = await Promise.all([
     prisma.group.findMany({
       orderBy: [{ grade: "asc" }, { subject: "asc" }, { name: "asc" }],
       include: {
@@ -26,6 +27,11 @@ export default async function HeadGroups() {
           },
         },
       },
+    }),
+    prisma.staff.findMany({
+      where: { isActive: true },
+      orderBy: { fullName: "asc" },
+      select: { id: true, fullName: true },
     }),
     prisma.moveRequest.count({ where: { status: "PENDING" } }),
   ]);
@@ -74,30 +80,36 @@ export default async function HeadGroups() {
                 </h2>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {list.map((group) => (
-                    <Link
+                    <div
                       key={group.id}
-                      href={`/attendance/head/groups/${group.id}?date=${today}`}
-                      className={`rounded-xl border bg-white p-4 shadow-sm transition-colors hover:border-brand ${
+                      className={`rounded-xl border bg-white p-4 shadow-sm ${
                         group.teacherId ? "border-slate-200" : "border-amber-300"
                       }`}
                     >
-                      <p className="text-base font-bold text-navy">{group.name}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {subjectLabel(group.subject)}
-                        {group.room ? ` · Room ${group.room}` : " · no room"}
-                      </p>
-                      <p className="mt-2 text-sm text-slate-700">
-                        {group.teacher?.fullName ?? (
-                          <span className="font-semibold text-amber-700">
-                            No teacher assigned
-                          </span>
-                        )}
-                      </p>
-                      <p className="mt-2 text-xs text-slate-500">
-                        {group._count.enrollments} students · {group._count.slots} timetabled
-                        lessons
-                      </p>
-                    </Link>
+                      <Link
+                        href={`/attendance/head/groups/${group.id}?date=${today}`}
+                        className="block transition-colors hover:text-brand-dark"
+                      >
+                        <p className="text-base font-bold text-navy">{group.name}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {subjectLabel(group.subject)}
+                          {group.room ? ` · Room ${group.room}` : " · no room"}
+                        </p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {group._count.enrollments} students · {group._count.slots}{" "}
+                          timetabled lessons
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-brand-dark">
+                          Open register →
+                        </p>
+                      </Link>
+
+                      <GroupTeacherPicker
+                        groupId={group.id}
+                        teacherId={group.teacherId}
+                        teachers={teachers}
+                      />
+                    </div>
                   ))}
                 </div>
               </section>

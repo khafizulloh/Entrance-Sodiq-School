@@ -10,14 +10,14 @@ export default async function HeadGroupRegister({
   searchParams,
 }: {
   params: Promise<{ groupId: string }>;
-  searchParams: Promise<{ date?: string; period?: string }>;
+  searchParams: Promise<{ date?: string; period?: string; month?: string }>;
 }) {
   const session = await getStaffSession();
   if (!session) redirect("/attendance/login");
   if (session.role !== "head") redirect("/attendance/teacher");
 
   const { groupId } = await params;
-  const { date, period } = await searchParams;
+  const { date, period, month } = await searchParams;
 
   return (
     <GroupRegisterView
@@ -25,6 +25,7 @@ export default async function HeadGroupRegister({
       session={session}
       date={date}
       period={period}
+      month={month}
       backHref="/attendance/head/groups"
     />
   );

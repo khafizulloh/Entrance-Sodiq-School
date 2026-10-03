@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { periodLabel } from "@/lib/attendance/periods";
 import {
   type AttendanceStatus,
@@ -59,13 +59,18 @@ export function RegisterTable({
   moveTargets,
   focusKey,
   canEdit,
+  months,
+  selectedMonth,
 }: {
   data: RegisterData;
   moveTargets: MoveTarget[];
   focusKey: string | null;
   canEdit: boolean;
+  months: Array<{ key: string; label: string }>;
+  selectedMonth: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [cells, setCells] = useState(data.cells);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -246,6 +251,25 @@ export function RegisterTable({
       {/* Today's lesson: the one-tap panel */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[150px]">
+            <label className="label" htmlFor="month-select">
+              Month
+            </label>
+            <select
+              id="month-select"
+              className="input"
+              value={selectedMonth}
+              onChange={(event) => router.push(`${pathname}?month=${event.target.value}`)}
+            >
+              {months.map((month) => (
+                <option key={month.key} value={month.key}>
+                  {month.label}
+                </option>
+              ))}
+              <option value="ALL">Whole term</option>
+            </select>
+          </div>
+
           <div className="min-w-[180px]">
             <label className="label" htmlFor="lesson-select">
               Lesson
@@ -301,6 +325,13 @@ export function RegisterTable({
             teacher can change it.
           </p>
         )}
+        {canEdit && (
+          <p className="mt-3 text-xs text-slate-500">
+            Any lesson that has already happened can be filled in, including ones first
+            taken on paper. Pick the month, pick the lesson, then fill the column. Only
+            lessons still to come are locked.
+          </p>
+        )}
       </div>
 
       {/* The register */}
@@ -351,12 +382,6 @@ export function RegisterTable({
                     </button>
                   </th>
                 ))}
-                <th
-                  className="border-b border-l border-slate-200 bg-navy px-2 py-2 text-center text-xs font-semibold uppercase tracking-wider text-white"
-                  rowSpan={2}
-                >
-                  Move
-                </th>
               </tr>
               <tr>
                 {data.columns.map((column) => (
@@ -375,10 +400,22 @@ export function RegisterTable({
             <tbody>
               {data.pupils.map((pupil, index) => (
                 <tr key={pupil.id} className="odd:bg-white even:bg-slate-50/60">
-                  <th className="sticky left-0 z-10 min-w-[200px] border-b border-r border-slate-200 bg-inherit px-3 py-1.5 text-left font-medium text-navy">
-                    <span className="mr-2 text-xs text-slate-400">{index + 1}</span>
-                    {pupil.firstName}{" "}
-                    <span className="font-semibold">{pupil.lastName}</span>
+                  <th className="sticky left-0 z-10 min-w-[230px] border-b border-r border-slate-200 bg-inherit px-3 py-1.5 text-left font-medium text-navy">
+                    <span className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">{index + 1}</span>
+                      <span className="flex-1 truncate">
+                        {pupil.firstName}{" "}
+                        <span className="font-semibold">{pupil.lastName}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setMovePupil(pupil)}
+                        className="shrink-0 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 transition-colors hover:border-brand hover:bg-brand/10 hover:text-navy"
+                        title="Wrong student in this list? Request a move."
+                      >
+                        Move
+                      </button>
+                    </span>
                   </th>
 
                   <td className="border-b border-r border-slate-200 px-2 py-1.5 text-center">
@@ -455,16 +492,6 @@ export function RegisterTable({
                     );
                   })}
 
-                  <td className="border-b border-l border-slate-200 px-2 py-1.5 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setMovePupil(pupil)}
-                      className="rounded border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-navy transition-colors hover:border-brand hover:bg-brand/10"
-                      title="Wrong student in this list? Request a move."
-                    >
-                      Move
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>

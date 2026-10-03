@@ -210,8 +210,12 @@ The head teacher creates every account and can reset any password.
   - Tapping a cell cycles **P → A → L → E → blank** (present, absent, late,
     excused). Marks are 0–100.
   - Changes save on their own; a badge shows *Saving… / Saved*.
+  - Browsed **one month at a time** (a term can run four months), with a
+    *Whole term* option. Any lesson that has already happened can be filled
+    in, which is how registers first kept on paper get typed up.
   - Future lessons are visible but locked, and the absence count per student
     sits next to the name.
+  - A **Move** button sits beside each student's name.
 - **Move requests** — a `Move` button on each row asks the head teacher to
   move a student who is on the wrong list, with an optional reason and a
   choice of whether the student's existing records travel with them.
@@ -228,10 +232,15 @@ The head teacher creates every account and can reset any password.
   created the same way, so every move is approved and confirmed.
 - **Groups / Students / Teachers** — groups with their teacher and size,
   the searchable student list with a manual move, and the account manager
-  (create an account, change a name, login id, password or role).
-- **Timetable** — every uploaded version, which one is in force today,
-  the teacher load for the week (7+ periods in a day shown in red), and the
-  whole-school grid.
+  (create an account, change a name, login id, password or role). A group's
+  teacher can be changed from the Groups page on its own, without touching
+  any other detail: the timetable from today follows the new teacher, while
+  past lessons keep whoever taught them.
+- **Timetable** — every uploaded version with an editable start date, which
+  one is in force today, the teacher load for the week (7+ periods in a day
+  shown in red), and the whole-school grid (days down the side, periods 1–8
+  across the top). Moving a version's start date earlier is how lessons
+  appear for dates earlier in the term.
 - **Uploads** — the three Excel uploads, each with a downloadable template.
 - **Reports** — students missing the most classes, highest first, filtered
   by date range and grade, with an Excel export.
@@ -318,15 +327,15 @@ npm run dev                  # http://localhost:3000/attendance
 ```
 
 The seed prints the login ids and passwords it created. It sets up the head
-teacher, the nine teachers, the 20 groups, the parallel-block timetable, a
-two-month tracking period and sample class lists. Group-to-teacher pairings
+teacher, the nine teachers, the 20 groups, the parallel-block timetable, the
+3 September to 26 December tracking period and sample class lists. Group-to-teacher pairings
 for the named groups are starting values — upload the real group list and
 timetable to replace them.
 
 ## Attendance tables
 
 - **Staff** — teachers and head teachers (login id, password hash, role).
-- **Term** — the period attendance is tracked for (two months for now).
+- **Term** — the period attendance is tracked for (3 September to 26 December).
 - **Group** — a teaching group, its grade, subject, room and teacher.
 - **Pupil** — a student on a class list.
 - **Enrollment** — a pupil's membership of a group, with start and end dates.
