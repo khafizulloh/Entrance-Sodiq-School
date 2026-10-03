@@ -16,6 +16,7 @@ export type StudentRow = {
   firstName: string;
   lastName: string;
   grade: number;
+  className: string | null;
   externalId: string | null;
   groups: Array<{ id: string; name: string; subject: string }>;
   absences: number;
@@ -44,18 +45,20 @@ export function StudentDirectory({
     return students.filter((student) => {
       if (grade && String(student.grade) !== grade) return false;
       if (!needle) return true;
-      const haystack = `${student.firstName} ${student.lastName} ${student.externalId ?? ""} ${student.groups
+      const haystack = `${student.firstName} ${student.lastName} ${
+        student.externalId ?? ""
+      } ${student.className ?? ""} ${student.groups
         .map((group) => group.name)
         .join(" ")}`.toLowerCase();
       return haystack.includes(needle);
     });
   }, [students, query, grade]);
 
+  // Every group the student is not already in. The move itself stays inside
+  // one track: moving into a SAT Math group only ends their SAT Math place.
   const targetsFor = (student: StudentRow) => {
     const inGroups = new Set(student.groups.map((group) => group.id));
-    return groups.filter(
-      (group) => group.grade === student.grade && !inGroups.has(group.id),
-    );
+    return groups.filter((group) => !inGroups.has(group.id));
   };
 
   return (
@@ -74,7 +77,7 @@ export function StudentDirectory({
             className="input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Name, student id or group"
+            placeholder="Name, UID, class or group"
           />
         </div>
         <div>
@@ -107,6 +110,7 @@ export function StudentDirectory({
               <th className="px-4 py-2.5">First name</th>
               <th className="px-4 py-2.5">Surname</th>
               <th className="px-4 py-2.5">Grade</th>
+              <th className="px-4 py-2.5">Class</th>
               <th className="px-4 py-2.5">Groups</th>
               <th className="px-4 py-2.5">Absences</th>
               <th className="px-4 py-2.5" />
@@ -118,6 +122,9 @@ export function StudentDirectory({
                 <td className="px-4 py-2.5 text-navy">{student.firstName}</td>
                 <td className="px-4 py-2.5 font-semibold text-navy">{student.lastName}</td>
                 <td className="px-4 py-2.5 text-slate-600">{student.grade}</td>
+                <td className="px-4 py-2.5 text-xs text-slate-500">
+                  {student.className ?? "—"}
+                </td>
                 <td className="px-4 py-2.5 text-slate-600">
                   {student.groups.length === 0 ? (
                     <span className="text-amber-700">no group</span>

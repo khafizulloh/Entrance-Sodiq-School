@@ -10,6 +10,8 @@ import { useState } from "react";
 
 type RowIssue = { row: number; message: string };
 
+type NewAccount = { fullName: string; loginId: string; password: string };
+
 type UploadReport = {
   type: string;
   rows: number;
@@ -18,6 +20,7 @@ type UploadReport = {
   skipped: number;
   errors: RowIssue[];
   warnings: RowIssue[];
+  accounts?: NewAccount[];
   note?: string;
 };
 
@@ -25,22 +28,23 @@ export function UploadPanel({ today }: { today: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <UploadCard
-        type="students"
-        title="Student list"
-        description="One row per student. A student already on the list is updated, not duplicated."
-        columns="First Name · Surname · Grade · Group · Student ID"
+        type="groups"
+        title="Groups and teachers"
+        description="Creates every group and gives it a teacher. Group names tell the app what they are: 5-E1 is General English for grades 5–6, SAT - E1 is SAT English, SAT - M1 is SAT Math. Pairs of Group and Teacher columns side by side are read too."
+        columns="Group · Teacher · Room"
+        needsAccounts
       />
       <UploadCard
-        type="groups"
-        title="Group list with teachers"
-        description="Creates the groups and assigns each one to a teacher account."
-        columns="Group Name · Grade · Subject · Teacher Login ID · Teacher Full Name · Room"
+        type="students"
+        title="Student list"
+        description="One row per student, with up to three groups each. A student already on the list is updated, not duplicated."
+        columns="First Name · Last Name · UID · Grade · Class Name · Group | Q1 · SAT Eng · SAT Math"
       />
       <UploadCard
         type="timetable"
         title="Timetable"
         description="Saved as a new version that starts on the date you choose. Attendance before that date keeps the old timetable."
-        columns="Group Name · Day · Period · Subject · Teacher Login ID · Room"
+        columns="Group · Day · Period · Teacher · Room"
         needsDate
         today={today}
       />
@@ -54,6 +58,7 @@ function UploadCard({
   description,
   columns,
   needsDate = false,
+  needsAccounts = false,
   today,
 }: {
   type: string;
@@ -61,11 +66,13 @@ function UploadCard({
   description: string;
   columns: string;
   needsDate?: boolean;
+  needsAccounts?: boolean;
   today?: string;
 }) {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [effectiveFrom, setEffectiveFrom] = useState(today ?? "");
+  const [createAccounts, setCreateAccounts] = useState(true);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +92,9 @@ function UploadCard({
     if (needsDate) {
       form.set("effectiveFrom", effectiveFrom);
       form.set("name", name);
+    }
+    if (needsAccounts) {
+      form.set("createAccounts", createAccounts ? "true" : "false");
     }
 
     const res = await fetch("/api/attendance/head/uploads", {
@@ -147,6 +157,24 @@ function UploadCard({
         </div>
       )}
 
+      {needsAccounts && (
+        <label className="mt-3 flex items-start gap-2.5 rounded-lg bg-slate-50 p-3 text-sm">
+          <input
+            type="checkbox"
+            checked={createAccounts}
+            onChange={(event) => setCreateAccounts(event.target.checked)}
+            className="mt-0.5 h-4 w-4"
+          />
+          <span>
+            <span className="font-medium text-navy">Create missing teacher accounts</span>
+            <span className="mt-0.5 block text-xs text-slate-500">
+              Any teacher named in the file who has no account gets one, with a starting
+              password you can change under Teachers.
+            </span>
+          </span>
+        </label>
+      )}
+
       <div className="mt-3">
         <label className="label" htmlFor={`${type}-file`}>
           Excel file
@@ -177,6 +205,27 @@ function UploadCard({
             {report.skipped > 0 ? ` · ${report.skipped} skipped` : ""}
           </p>
           {report.note && <p className="mt-1 text-xs text-slate-600">{report.note}</p>}
+
+          {report.accounts && report.accounts.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-navy">
+                New teacher accounts ({report.accounts.length})
+              </p>
+              <ul className="mt-1 space-y-0.5 text-xs text-slate-700">
+                {report.accounts.map((account) => (
+                  <li key={account.loginId}>
+                    {account.fullName} — login{" "}
+                    <span className="font-mono font-semibold">{account.loginId}</span>,
+                    password{" "}
+                    <span className="font-mono font-semibold">{account.password}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Write these down and change the passwords under Teachers.
+              </p>
+            </div>
+          )}
 
           {report.errors.length > 0 && (
             <div className="mt-2">

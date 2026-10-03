@@ -4,7 +4,7 @@ import { PageHeading, StaffShell } from "@/components/attendance/StaffShell";
 import { getStaffSession } from "@/lib/attendance/auth";
 import { prisma } from "@/lib/prisma";
 import { schoolToday } from "@/lib/attendance/dates";
-import { subjectLabel } from "@/lib/attendance/subjects";
+import { bandLabel, subjectLabel } from "@/lib/attendance/subjects";
 
 export const metadata = { title: "My groups — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export default async function TeacherGroups() {
             >
               <p className="text-lg font-bold text-navy">{group.name}</p>
               <p className="mt-1 text-sm text-slate-500">
-                {subjectLabel(group.subject)} · Grade {group.grade}
+                {subjectLabel(group.subject)} · {bandLabel(group.subject, group.grade)}
                 {group.room ? ` · Room ${group.room}` : ""}
               </p>
               <p className="mt-3 text-sm font-semibold text-brand-dark">

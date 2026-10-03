@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { subjectLabel } from "@/lib/attendance/subjects";
+import { SUBJECTS, bandLabel, subjectLabel } from "@/lib/attendance/subjects";
 
 /**
  * "Wrong student in this list?" — asks the head teacher to move a student to
@@ -95,18 +95,30 @@ export function MoveRequestDialog({
               required
             >
               <option value="">Choose a group…</option>
-              {targets.map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.name} · {subjectLabel(target.subject)}
-                  {target.teacherName ? ` · ${target.teacherName}` : ""}
-                </option>
+              {SUBJECTS.filter((subject) =>
+                targets.some((target) => target.subject === subject),
+              ).map((subject) => (
+                <optgroup key={subject} label={subjectLabel(subject)}>
+                  {targets
+                    .filter((target) => target.subject === subject)
+                    .map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.name} · {bandLabel(target.subject, target.grade)}
+                        {target.teacherName ? ` · ${target.teacherName}` : ""}
+                      </option>
+                    ))}
+                </optgroup>
               ))}
             </select>
             {targets.length === 0 && (
               <p className="mt-1.5 text-xs text-slate-500">
-                No other group of the same grade and subject.
+                No other group in this track.
               </p>
             )}
+            <p className="mt-1.5 text-xs text-slate-500">
+              A student only moves within one track. General English, SAT English and
+              SAT Math are kept apart.
+            </p>
           </div>
 
           <label className="flex items-start gap-2.5 rounded-lg bg-slate-50 p-3 text-sm">

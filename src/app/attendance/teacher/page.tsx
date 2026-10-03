@@ -6,7 +6,7 @@ import { getStaffSession } from "@/lib/attendance/auth";
 import { teacherDashboard } from "@/lib/attendance/dashboard";
 import { longDateLabel } from "@/lib/attendance/dates";
 import { periodLabel } from "@/lib/attendance/periods";
-import { subjectLabel } from "@/lib/attendance/subjects";
+import { bandLabel, subjectLabel } from "@/lib/attendance/subjects";
 import type { ResolvedSlot } from "@/lib/attendance/timetable";
 
 export const metadata = { title: "Teacher dashboard — Sodiq School Attendance" };
@@ -166,7 +166,8 @@ export default async function TeacherDashboard() {
               >
                 <span className="block text-sm font-semibold text-navy">{group.name}</span>
                 <span className="block text-[11px] text-slate-500">
-                  {subjectLabel(group.subject)} · Grade {group.grade}
+                  {subjectLabel(group.subject)} ·{" "}
+                  {bandLabel(group.subject, group.grade)}
                   {group.room ? ` · ${group.room}` : ""}
                 </span>
               </Link>

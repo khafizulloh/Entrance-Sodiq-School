@@ -1,15 +1,20 @@
 /**
- * Seeds the attendance tracker so it can be used (or demonstrated) right away:
- * staff accounts, groups, the parallel-block timetable, class lists and a
- * two-month tracking period.
+ * Seeds the attendance tracker so it can be used straight away: staff
+ * accounts, the groups, the weekly timetable and the tracking period.
  *
  * Run with:  npm run db:seed:attendance
  *
- * The timetable here follows the blocks in the school's current timetable
- * report: every group in a grade meets at the same periods, so a student can
- * be moved between groups of the same grade without a clash. Teacher names and
- * the group-to-teacher pairings for the named groups are starting values —
- * upload the real group list and timetable to replace them.
+ * Groups and teachers follow the school's own lists. General English groups
+ * are named by band — 5-E1 to 5-E4 take grades 5 and 6, 11-E1 to 11-E4 take
+ * grades 10 and 11 — and every group in a band meets at the same periods, so
+ * a student can be moved between them without a clash.
+ *
+ * SAT groups are created but have no lessons on the timetable yet. Add them
+ * with a timetable upload once the SAT times are set.
+ *
+ * Students are not seeded: upload the real list under Uploads → Student list.
+ * Set ATTENDANCE_SEED_SAMPLE_STUDENTS=true for a few made-up ones to click
+ * around with.
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -18,21 +23,22 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 const TEACHERS = [
-  { loginId: "nigina", fullName: "Tuxtasinova Nigina" },
-  { loginId: "mohigul", fullName: "Anvarbekova Mohigul" },
-  { loginId: "ruqiya", fullName: "Maxbubova Ruqiya" },
-  { loginId: "rayxon", fullName: "Bo'riyeva Rayxon" },
-  { loginId: "izzat", fullName: "Vaxobjonov Izzat" },
-  { loginId: "muslima", fullName: "To'xtamurodova Muslima" },
-  { loginId: "umarjon", fullName: "Baxtiyorov Umarjon" },
-  { loginId: "khafizulloh", fullName: "Ahmad Khafizulloh" },
-  { loginId: "muhammadiyor", fullName: "Isomiddinov Muhammadiyor" },
+  { loginId: "nika", fullName: "Nika" },
+  { loginId: "izzat", fullName: "Izzat" },
+  { loginId: "rayxona", fullName: "Rayxona" },
+  { loginId: "mohigul", fullName: "Mohigul" },
+  { loginId: "ruqiya", fullName: "Ruqiya" },
+  { loginId: "muslima", fullName: "Muslima" },
+  { loginId: "khafizulloh", fullName: "Khafizulloh" },
+  { loginId: "muhammaddiyor", fullName: "Muhammaddiyor" },
+  { loginId: "umar", fullName: "Umar" },
 ];
 
 /** [day, period] pairs. 1 = Monday ... 5 = Friday. */
 type Block = Array<[number, number]>;
 
-const BLOCK_5_6: Block = [
+// Grades 5–6 study together, grades 10–11 study together.
+const BAND_5: Block = [
   [1, 1],
   [1, 2],
   [3, 6],
@@ -40,7 +46,7 @@ const BLOCK_5_6: Block = [
   [4, 3],
   [4, 4],
 ];
-const BLOCK_7: Block = [
+const BAND_7: Block = [
   [2, 3],
   [2, 4],
   [3, 3],
@@ -48,7 +54,7 @@ const BLOCK_7: Block = [
   [5, 3],
   [5, 4],
 ];
-const BLOCK_8: Block = [
+const BAND_8: Block = [
   [2, 1],
   [2, 2],
   [4, 1],
@@ -56,7 +62,7 @@ const BLOCK_8: Block = [
   [5, 7],
   [5, 8],
 ];
-const BLOCK_9: Block = [
+const BAND_9: Block = [
   [1, 3],
   [1, 4],
   [3, 1],
@@ -64,7 +70,7 @@ const BLOCK_9: Block = [
   [4, 7],
   [4, 8],
 ];
-const BLOCK_IELTS: Block = [
+const BAND_11: Block = [
   [1, 5],
   [1, 7],
   [2, 7],
@@ -72,73 +78,61 @@ const BLOCK_IELTS: Block = [
   [5, 1],
   [5, 2],
 ];
-const BLOCK_SAT_MATH_10: Block = [
-  [3, 7],
-  [3, 8],
-  [4, 7],
-  [4, 8],
-  [5, 7],
-  [5, 8],
-];
-const BLOCK_SAT_MATH_11: Block = [
-  [3, 3],
-  [3, 4],
-  [5, 3],
-  [5, 4],
-];
 
-const GROUPS = [
-  // Grades 5–6 meet Mon 1–2, Wed 6–7, Thu 3–4.
-  { name: "5 TOKYO", grade: 5, subject: "ENGLISH", room: "201", teacher: "nigina", block: BLOCK_5_6 },
-  { name: "5 LONDON", grade: 5, subject: "ENGLISH", room: "202", teacher: "ruqiya", block: BLOCK_5_6 },
-  { name: "6 IMPERIAL", grade: 6, subject: "ENGLISH", room: "203", teacher: "rayxon", block: BLOCK_5_6 },
-  { name: "6/2", grade: 6, subject: "ENGLISH", room: null, teacher: "mohigul", block: BLOCK_5_6 },
+type SeedGroup = {
+  name: string;
+  grade: number;
+  subject: string;
+  teacher: string;
+  block: Block | null;
+};
 
-  // Grade 7 meets Tue 3–4, Wed 3–4, Fri 3–4.
-  { name: "7 SYDNEY", grade: 7, subject: "ENGLISH", room: "204", teacher: "nigina", block: BLOCK_7 },
-  { name: "7 UPENN", grade: 7, subject: "ENGLISH", room: "205", teacher: "ruqiya", block: BLOCK_7 },
-  { name: "7/3", grade: 7, subject: "ENGLISH", room: null, teacher: "mohigul", block: BLOCK_7 },
+const GROUPS: SeedGroup[] = [
+  // Grades 5–6: Mon 1–2, Wed 6–7, Thu 3–4
+  { name: "5-E1", grade: 5, subject: "GENERAL_ENGLISH", teacher: "nika", block: BAND_5 },
+  { name: "5-E2", grade: 5, subject: "GENERAL_ENGLISH", teacher: "izzat", block: BAND_5 },
+  { name: "5-E3", grade: 5, subject: "GENERAL_ENGLISH", teacher: "rayxona", block: BAND_5 },
+  { name: "5-E4", grade: 5, subject: "GENERAL_ENGLISH", teacher: "mohigul", block: BAND_5 },
 
-  // Grade 8 meets Tue 1–2, Thu 1–2, Fri 7–8.
-  { name: "8 COLUMBIA", grade: 8, subject: "ENGLISH", room: "206", teacher: "mohigul", block: BLOCK_8 },
-  { name: "8 COLORADO", grade: 8, subject: "ENGLISH", room: "207", teacher: "ruqiya", block: BLOCK_8 },
-  { name: "8/3", grade: 8, subject: "ENGLISH", room: null, teacher: "nigina", block: BLOCK_8 },
+  // Grade 7: Tue 3–4, Wed 3–4, Fri 3–4
+  { name: "7-E1", grade: 7, subject: "GENERAL_ENGLISH", teacher: "ruqiya", block: BAND_7 },
+  { name: "7-E2", grade: 7, subject: "GENERAL_ENGLISH", teacher: "rayxona", block: BAND_7 },
+  { name: "7-E3", grade: 7, subject: "GENERAL_ENGLISH", teacher: "mohigul", block: BAND_7 },
 
-  // Grade 9 meets Mon 3–4, Wed 1–2, Thu 7–8.
-  { name: "9 MIT", grade: 9, subject: "ENGLISH", room: "208", teacher: "nigina", block: BLOCK_9 },
-  { name: "9 CAMBRIDGE", grade: 9, subject: "ENGLISH", room: "209", teacher: "rayxon", block: BLOCK_9 },
-  { name: "9/3", grade: 9, subject: "ENGLISH", room: null, teacher: "mohigul", block: BLOCK_9 },
-  { name: "9/4", grade: 9, subject: "ENGLISH", room: null, teacher: "izzat", block: BLOCK_9 },
+  // Grade 8: Tue 1–2, Thu 1–2, Fri 7–8
+  { name: "8-E1", grade: 8, subject: "GENERAL_ENGLISH", teacher: "rayxona", block: BAND_8 },
+  { name: "8-E2", grade: 8, subject: "GENERAL_ENGLISH", teacher: "ruqiya", block: BAND_8 },
+  { name: "8-E3", grade: 8, subject: "GENERAL_ENGLISH", teacher: "nika", block: BAND_8 },
 
-  // Grades 10–11 IELTS meet Mon 5 and 7, Tue 7–8, Fri 1–2.
-  { name: "11 YALE", grade: 11, subject: "IELTS", room: "301", teacher: "izzat", block: BLOCK_IELTS },
-  { name: "10 OXFORD", grade: 10, subject: "IELTS", room: "302", teacher: "ruqiya", block: BLOCK_IELTS },
-  { name: "10 STANFORD", grade: 10, subject: "IELTS", room: "303", teacher: "rayxon", block: BLOCK_IELTS },
-  { name: "10/3", grade: 10, subject: "IELTS", room: null, teacher: "muslima", block: BLOCK_IELTS },
+  // Grade 9: Mon 3–4, Wed 1–2, Thu 7–8
+  { name: "9-E1", grade: 9, subject: "GENERAL_ENGLISH", teacher: "nika", block: BAND_9 },
+  { name: "9-E2", grade: 9, subject: "GENERAL_ENGLISH", teacher: "izzat", block: BAND_9 },
+  { name: "9-E3", grade: 9, subject: "GENERAL_ENGLISH", teacher: "ruqiya", block: BAND_9 },
+  { name: "9-E4", grade: 9, subject: "GENERAL_ENGLISH", teacher: "mohigul", block: BAND_9 },
 
-  // SAT Math. A student can be in an English/IELTS group and a SAT Math group.
-  { name: "SAT MATH 10", grade: 10, subject: "SAT_MATH", room: "305", teacher: "umarjon", block: BLOCK_SAT_MATH_10 },
-  { name: "SAT MATH 11", grade: 11, subject: "SAT_MATH", room: "306", teacher: "muhammadiyor", block: BLOCK_SAT_MATH_11 },
+  // Grades 10–11: Mon 5 and 7, Tue 7–8, Fri 1–2
+  { name: "11-E1", grade: 11, subject: "GENERAL_ENGLISH", teacher: "nika", block: BAND_11 },
+  { name: "11-E2", grade: 11, subject: "GENERAL_ENGLISH", teacher: "ruqiya", block: BAND_11 },
+  { name: "11-E3", grade: 11, subject: "GENERAL_ENGLISH", teacher: "mohigul", block: BAND_11 },
+  { name: "11-E4", grade: 11, subject: "GENERAL_ENGLISH", teacher: "muslima", block: BAND_11 },
+
+  // SAT: groups exist so students can be assigned. Times come later.
+  { name: "SAT - E1", grade: 11, subject: "SAT_ENGLISH", teacher: "khafizulloh", block: null },
+  { name: "SAT - E2", grade: 11, subject: "SAT_ENGLISH", teacher: "izzat", block: null },
+  { name: "SAT - M1", grade: 11, subject: "SAT_MATH", teacher: "muhammaddiyor", block: null },
+  { name: "SAT - M2", grade: 11, subject: "SAT_MATH", teacher: "umar", block: null },
 ];
 
-const FIRST_NAMES = [
-  "Ali", "Nodira", "Sardor", "Zilola", "Jasur", "Madina", "Bekzod", "Oydin",
-  "Temur", "Shahzoda", "Akmal", "Gulnora", "Davron", "Kamola", "Ruslan",
-  "Dilnoza", "Islom", "Sevinch", "Aziz", "Mohira", "Farrux", "Nilufar",
-  "Ulugbek", "Zarina",
+const SAMPLE_STUDENTS: Array<[string, string, number, string, string]> = [
+  ["Munisa", "Karimova", 5, "5 - Tokyo", "5-E1"],
+  ["Dilshod", "Davlatyorov", 6, "6 - Imperial", "5-E1"],
+  ["Amirbek", "Zokirov", 5, "5 - London", "5-E2"],
+  ["Durbek", "Karimov", 7, "7 - Sydney", "7-E1"],
+  ["Mahinabonu", "Faxriddinova", 8, "8 - Columbia", "8-E1"],
+  ["Fotima", "Ergashbaeva", 9, "9 - Cambridge", "9-E1"],
+  ["Asilbek", "Amreyev", 11, "11 - Yale", "11-E1"],
+  ["Abdulhamid", "Axramov", 10, "10 - Stanford", "11-E1"],
 ];
-const LAST_NAMES = [
-  "Karimov", "Yusupova", "Qosimov", "Rahmonova", "Tursunov", "Ibragimova",
-  "Sultonov", "Nazarova", "Ergashev", "Yo'ldosheva", "Hamidov", "Saidova",
-  "Mirzayev", "Olimova", "Rasulov", "Juraeva",
-];
-
-function pupilName(index: number) {
-  return {
-    firstName: FIRST_NAMES[index % FIRST_NAMES.length],
-    lastName: LAST_NAMES[Math.floor(index / FIRST_NAMES.length) % LAST_NAMES.length],
-  };
-}
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -180,7 +174,6 @@ async function main() {
 
   // ---- term: 3 September to 26 December of the current school year --------
   const now = new Date();
-  // Before 3 September we are still in last year's term.
   const schoolYear =
     now.getMonth() > 7 || (now.getMonth() === 8 && now.getDate() >= 3)
       ? now.getFullYear()
@@ -209,7 +202,6 @@ async function main() {
       update: {
         grade: group.grade,
         subject: group.subject,
-        room: group.room,
         teacherId: staffByLogin.get(group.teacher) ?? null,
         isActive: true,
       },
@@ -217,13 +209,12 @@ async function main() {
         name: group.name,
         grade: group.grade,
         subject: group.subject,
-        room: group.room,
         teacherId: staffByLogin.get(group.teacher) ?? null,
       },
     });
     groupIdByName.set(group.name, record.id);
   }
-  console.log(`Groups: ${GROUPS.length}.`);
+  console.log(`Groups: ${GROUPS.length} (${GROUPS.filter((g) => !g.block).length} SAT groups without times yet).`);
 
   // ---- timetable ---------------------------------------------------------
   const alreadyUploaded = await prisma.timetableVersion.count();
@@ -232,20 +223,19 @@ async function main() {
       data: {
         name: "Starting timetable",
         effectiveFrom: term.startDate,
-        note: "Seeded from the current timetable blocks",
+        note: "Seeded from the school's weekly blocks",
         uploadedById: head.id,
       },
     });
 
     const slots = GROUPS.flatMap((group) =>
-      group.block.map(([dayOfWeek, period]) => ({
+      (group.block ?? []).map(([dayOfWeek, period]) => ({
         versionId: version.id,
         groupId: groupIdByName.get(group.name) as string,
         teacherId: staffByLogin.get(group.teacher) ?? null,
         dayOfWeek,
         period,
         subject: group.subject,
-        room: group.room,
       })),
     );
     await prisma.timetableSlot.createMany({ data: slots, skipDuplicates: true });
@@ -254,48 +244,26 @@ async function main() {
     console.log("Timetable: already present, left as it is.");
   }
 
-  // ---- class lists -------------------------------------------------------
+  // ---- sample students (off unless asked for) -----------------------------
+  const wantSamples = process.env.ATTENDANCE_SEED_SAMPLE_STUDENTS === "true";
   const existingPupils = await prisma.pupil.count();
-  if (existingPupils === 0) {
-    let index = 0;
-    for (const group of GROUPS) {
-      const groupId = groupIdByName.get(group.name) as string;
-      // SAT Math groups are filled from the pupils already in grade 10/11.
-      if (group.subject === "SAT_MATH") continue;
-
-      for (let seat = 0; seat < 8; seat++) {
-        const name = pupilName(index++);
-        const pupil = await prisma.pupil.create({
-          data: {
-            firstName: name.firstName,
-            lastName: name.lastName,
-            grade: group.grade,
-            externalId: `S-${String(index).padStart(4, "0")}`,
-          },
-        });
-        await prisma.enrollment.create({
-          data: { pupilId: pupil.id, groupId, startDate: term.startDate },
-        });
-      }
-    }
-
-    // Half of each senior IELTS group also takes SAT Math.
-    for (const satGroup of GROUPS.filter((group) => group.subject === "SAT_MATH")) {
-      const groupId = groupIdByName.get(satGroup.name) as string;
-      const candidates = await prisma.pupil.findMany({
-        where: { grade: satGroup.grade },
-        take: 6,
+  if (wantSamples && existingPupils === 0) {
+    for (const [firstName, lastName, grade, className, groupName] of SAMPLE_STUDENTS) {
+      const pupil = await prisma.pupil.create({
+        data: { firstName, lastName, grade, className },
       });
-      for (const pupil of candidates) {
+      const groupId = groupIdByName.get(groupName);
+      if (groupId) {
         await prisma.enrollment.create({
           data: { pupilId: pupil.id, groupId, startDate: term.startDate },
         });
       }
     }
-    const total = await prisma.pupil.count();
-    console.log(`Students: ${total} across the class lists.`);
-  } else {
+    console.log(`Students: ${SAMPLE_STUDENTS.length} samples added.`);
+  } else if (existingPupils > 0) {
     console.log(`Students: ${existingPupils} already on file, left as they are.`);
+  } else {
+    console.log("Students: none. Upload the real list under Uploads → Student list.");
   }
 
   console.log("\nSign in at /attendance");

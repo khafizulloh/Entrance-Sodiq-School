@@ -4,7 +4,7 @@ import { GroupTeacherPicker } from "@/components/attendance/GroupTeacherPicker";
 import { PageHeading, StaffShell } from "@/components/attendance/StaffShell";
 import { getStaffSession } from "@/lib/attendance/auth";
 import { schoolToday } from "@/lib/attendance/dates";
-import { subjectLabel } from "@/lib/attendance/subjects";
+import { SUBJECTS, bandLabel, subjectLabel } from "@/lib/attendance/subjects";
 import { prisma } from "@/lib/prisma";
 
 export const metadata = { title: "Groups — Sodiq School Attendance" };
@@ -37,12 +37,21 @@ export default async function HeadGroups() {
   ]);
 
   const today = schoolToday();
-  const byGrade = new Map<number, typeof groups>();
+
+  // Grouped by track, because that is how the school thinks about them:
+  // General English for everyone, SAT English and SAT Math on top.
+  const bySubject = new Map<string, typeof groups>();
   for (const group of groups) {
-    const list = byGrade.get(group.grade) ?? [];
+    const list = bySubject.get(group.subject) ?? [];
     list.push(group);
-    byGrade.set(group.grade, list);
+    bySubject.set(group.subject, list);
   }
+  const sections = [
+    ...SUBJECTS.filter((subject) => bySubject.has(subject)),
+    ...[...bySubject.keys()].filter(
+      (subject) => !SUBJECTS.includes(subject as (typeof SUBJECTS)[number]),
+    ),
+  ];
 
   return (
     <StaffShell
@@ -71,12 +80,13 @@ export default async function HeadGroups() {
         </div>
       ) : (
         <div className="space-y-6">
-          {[...byGrade.entries()]
-            .sort((a, b) => a[0] - b[0])
-            .map(([grade, list]) => (
-              <section key={grade}>
+          {sections.map((subject) => {
+            const list = bySubject.get(subject) ?? [];
+            return (
+              <section key={subject}>
                 <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-slate-500">
-                  Grade {grade}
+                  {subjectLabel(subject)} · {list.length} group
+                  {list.length === 1 ? "" : "s"}
                 </h2>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {list.map((group) => (
@@ -92,7 +102,7 @@ export default async function HeadGroups() {
                       >
                         <p className="text-base font-bold text-navy">{group.name}</p>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          {subjectLabel(group.subject)}
+                          {bandLabel(group.subject, group.grade)}
                           {group.room ? ` · Room ${group.room}` : " · no room"}
                         </p>
                         <p className="mt-2 text-xs text-slate-500">
@@ -113,7 +123,8 @@ export default async function HeadGroups() {
                   ))}
                 </div>
               </section>
-            ))}
+            );
+          })}
         </div>
       )}
     </StaffShell>

@@ -191,7 +191,7 @@ model Group {
   id        String   @id @default(cuid())
   name      String   @unique
   grade     Int
-  subject   String   @default("ENGLISH") // ENGLISH | SAT_MATH | IELTS | SPEAKING | SAT_ENGLISH
+  subject   String   @default("GENERAL_ENGLISH") // GENERAL_ENGLISH | SAT_ENGLISH | SAT_MATH
   room      String?
   teacherId String?
   isActive  Boolean  @default(true)
@@ -217,7 +217,8 @@ model Pupil {
   firstName  String
   lastName   String
   grade      Int
-  externalId String? // school id from the uploaded Excel file
+  className  String? // homeroom class, e.g. "10 - Stanford"
+  externalId String? // UID from the uploaded Excel file
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -278,7 +279,7 @@ model TimetableSlot {
   teacherId String?
   dayOfWeek Int // 1 = Monday ... 5 = Friday
   period    Int // 1..8
-  subject   String  @default("ENGLISH")
+  subject   String  @default("GENERAL_ENGLISH")
   room      String?
 
   version TimetableVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)

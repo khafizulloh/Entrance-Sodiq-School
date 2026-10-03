@@ -56,6 +56,7 @@ export default async function HeadStudents() {
     firstName: pupil.firstName,
     lastName: pupil.lastName,
     grade: pupil.grade,
+    className: pupil.className,
     externalId: pupil.externalId,
     groups: pupil.enrollments.map((enrollment) => enrollment.group),
     absences: absenceByPupil.get(pupil.id) ?? 0,

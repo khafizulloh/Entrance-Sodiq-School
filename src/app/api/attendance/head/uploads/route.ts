@@ -1,12 +1,23 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireHead } from "@/lib/attendance/auth";
+import { hashPassword, requireHead } from "@/lib/attendance/auth";
 import { isValidIsoDate, schoolToday, toDbDate } from "@/lib/attendance/dates";
 import { parseDay, parseSheet, pick, pickInt, splitName } from "@/lib/attendance/sheet";
-import { normalizeSubject } from "@/lib/attendance/subjects";
+import {
+  type Subject,
+  normalizeSubject,
+  parseGroupName,
+  subjectLabel,
+} from "@/lib/attendance/subjects";
 
 /**
- * Excel uploads: student lists, group lists (with teachers) and the timetable.
+ * Excel uploads: the group list with teachers, the student list, and the
+ * timetable.
+ *
+ * The two lists match the sheets the school already keeps:
+ *   Groups:   Group | Teacher, optionally repeated side by side across the row.
+ *   Students: First Name | Last Name | UID | Grade | Class Name |
+ *             Group | Q1 | SAT Eng | SAT Math
  *
  * Every upload reports back row by row, so a bad cell is visible instead of
  * silently dropped. Uploading a timetable creates a new version that takes
@@ -14,6 +25,8 @@ import { normalizeSubject } from "@/lib/attendance/subjects";
  */
 
 type RowIssue = { row: number; message: string };
+
+type NewAccount = { fullName: string; loginId: string; password: string };
 
 type UploadReport = {
   type: string;
@@ -23,6 +36,7 @@ type UploadReport = {
   skipped: number;
   errors: RowIssue[];
   warnings: RowIssue[];
+  accounts?: NewAccount[];
   note?: string;
 };
 
@@ -70,9 +84,13 @@ export async function POST(req: Request) {
   }
 
   if (type === "students") return NextResponse.json(await importStudents(rows));
-  if (type === "groups") return NextResponse.json(await importGroups(rows));
+  if (type === "groups") {
+    const createAccounts = String(form.get("createAccounts") ?? "") !== "false";
+    return NextResponse.json(await importGroups(rows, { createAccounts }));
+  }
   if (type === "timetable") {
-    const name = String(form.get("name") ?? "").trim() || `Timetable uploaded ${schoolToday()}`;
+    const name =
+      String(form.get("name") ?? "").trim() || `Timetable uploaded ${schoolToday()}`;
     const effectiveFrom = String(form.get("effectiveFrom") ?? "").trim();
     if (!isValidIsoDate(effectiveFrom)) {
       return NextResponse.json(
@@ -89,9 +107,201 @@ export async function POST(req: Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Students
+// Matching teachers by whatever the sheet calls them
 // ---------------------------------------------------------------------------
-async function importStudents(rows: Array<Record<string, string>>): Promise<UploadReport> {
+
+type StaffLite = { id: string; loginId: string; fullName: string };
+
+/**
+ * The school's sheets use first names ("Nika", "Rayxona"), so a teacher is
+ * matched on their login id, their full name, or any single part of it.
+ * A name that matches two accounts is treated as no match.
+ */
+async function buildTeacherIndex() {
+  const staff = await prisma.staff.findMany({
+    select: { id: true, loginId: true, fullName: true },
+  });
+
+  const exact = new Map<string, StaffLite>();
+  const parts = new Map<string, StaffLite | null>();
+
+  for (const member of staff) {
+    exact.set(member.loginId.toLowerCase(), member);
+    exact.set(keyOf(member.fullName), member);
+    for (const part of member.fullName.split(/\s+/).filter(Boolean)) {
+      const key = keyOf(part);
+      parts.set(key, parts.has(key) ? null : member);
+    }
+  }
+
+  return {
+    find(name: string): StaffLite | null | undefined {
+      const trimmed = name.trim();
+      if (!trimmed) return undefined;
+      return (
+        exact.get(trimmed.toLowerCase()) ?? exact.get(keyOf(trimmed)) ?? parts.get(keyOf(trimmed))
+      );
+    },
+    add(member: StaffLite) {
+      exact.set(member.loginId.toLowerCase(), member);
+      exact.set(keyOf(member.fullName), member);
+      for (const part of member.fullName.split(/\s+/).filter(Boolean)) {
+        const key = keyOf(part);
+        parts.set(key, parts.has(key) ? null : member);
+      }
+    },
+    takenLoginIds: new Set(staff.map((member) => member.loginId.toLowerCase())),
+  };
+}
+
+function loginIdFrom(fullName: string, taken: Set<string>): string {
+  const base =
+    fullName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "")
+      .slice(0, 20) || "teacher";
+  let candidate = base;
+  let suffix = 2;
+  while (taken.has(candidate)) candidate = `${base}${suffix++}`;
+  taken.add(candidate);
+  return candidate;
+}
+
+// ---------------------------------------------------------------------------
+// Groups and their teachers
+// ---------------------------------------------------------------------------
+async function importGroups(
+  rows: Array<Record<string, string>>,
+  options: { createAccounts: boolean },
+): Promise<UploadReport> {
+  const report: UploadReport = {
+    type: "groups",
+    rows: rows.length,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    errors: [],
+    warnings: [],
+    accounts: [],
+  };
+
+  const index = await buildTeacherIndex();
+  const startingPassword = process.env.ATTENDANCE_TEACHER_PASSWORD || "Teacher12345!";
+  let passwordHash: string | null = null;
+
+  // A row can carry several Group/Teacher pairs side by side. Excel names the
+  // repeated headings Group_1, Teacher_1 and so on.
+  const pairs: Array<[string[], string[]]> = [
+    [["Group", "Group Name", "Guruh"], ["Teacher", "Teacher Full Name", "Ustoz"]],
+    [["Group_1"], ["Teacher_1"]],
+    [["Group_2"], ["Teacher_2"]],
+    [["Group_3"], ["Teacher_3"]],
+  ];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNumber = i + 2; // the heading is row 1
+
+    for (let pairIndex = 0; pairIndex < pairs.length; pairIndex++) {
+      const [groupNames, teacherNames] = pairs[pairIndex];
+      const name = pick(row, ...groupNames);
+      if (!name) continue;
+
+      const parsed = parseGroupName(name);
+      // Explicit columns win, but only on a sheet with a single pair.
+      const subjectCell = pairIndex === 0 ? pick(row, "Subject", "Fan") : "";
+      const subject: Subject = subjectCell ? normalizeSubject(subjectCell) : parsed.subject;
+      const grade =
+        (pairIndex === 0 ? pickInt(row, "Grade", "Class", "Sinf") : null) ?? parsed.grade;
+      const room = (pairIndex === 0 ? pick(row, "Room", "Xona") : "") || null;
+
+      if (!grade) {
+        report.errors.push({
+          row: rowNumber,
+          message: `Could not work out the grade for "${name}". Add a Grade column.`,
+        });
+        continue;
+      }
+
+      const teacherCell = pick(row, ...teacherNames, "Teacher Login ID", "Login Id");
+      let teacher = teacherCell ? index.find(teacherCell) : undefined;
+
+      if (teacherCell && teacher === null) {
+        report.warnings.push({
+          row: rowNumber,
+          message: `"${teacherCell}" matches more than one account. Group saved without a teacher.`,
+        });
+        teacher = undefined;
+      } else if (teacherCell && teacher === undefined) {
+        if (options.createAccounts) {
+          passwordHash = passwordHash ?? (await hashPassword(startingPassword));
+          const loginId = loginIdFrom(teacherCell, index.takenLoginIds);
+          const created = await prisma.staff.create({
+            data: {
+              loginId,
+              fullName: teacherCell,
+              role: "teacher",
+              passwordHash,
+            },
+            select: { id: true, loginId: true, fullName: true },
+          });
+          index.add(created);
+          report.accounts?.push({
+            fullName: created.fullName,
+            loginId: created.loginId,
+            password: startingPassword,
+          });
+          teacher = created;
+        } else {
+          report.warnings.push({
+            row: rowNumber,
+            message: `No account for "${teacherCell}". Group saved without a teacher.`,
+          });
+        }
+      }
+
+      const existing = await prisma.group.findFirst({
+        where: { name: { equals: name, mode: "insensitive" } },
+      });
+
+      if (existing) {
+        await prisma.group.update({
+          where: { id: existing.id },
+          data: {
+            name,
+            grade,
+            subject,
+            isActive: true,
+            ...(room ? { room } : {}),
+            ...(teacher ? { teacherId: teacher.id } : {}),
+          },
+        });
+        report.updated++;
+      } else {
+        await prisma.group.create({
+          data: { name, grade, subject, room, teacherId: teacher?.id ?? null },
+        });
+        report.created++;
+      }
+    }
+  }
+
+  if (report.created + report.updated === 0) {
+    report.errors.push({
+      row: 0,
+      message: "No group names found. The sheet needs a Group column and a Teacher column.",
+    });
+  }
+
+  return report;
+}
+
+// ---------------------------------------------------------------------------
+// Students, with up to three groups each
+// ---------------------------------------------------------------------------
+async function importStudents(
+  rows: Array<Record<string, string>>,
+): Promise<UploadReport> {
   const report: UploadReport = {
     type: "students",
     rows: rows.length,
@@ -108,40 +318,49 @@ async function importStudents(rows: Array<Record<string, string>>): Promise<Uplo
   const groupByName = new Map(groups.map((group) => [keyOf(group.name), group]));
   const today = toDbDate(schoolToday());
 
+  /** Finds the group, creating it from its name if the sheet knows one we do not. */
+  async function resolveGroup(name: string, rowNumber: number) {
+    const existing = groupByName.get(keyOf(name));
+    if (existing) return existing;
+
+    const parsed = parseGroupName(name);
+    const created = await prisma.group.create({
+      data: { name, grade: parsed.grade, subject: parsed.subject },
+      select: { id: true, name: true, grade: true, subject: true },
+    });
+    groupByName.set(keyOf(name), created);
+    report.warnings.push({
+      row: rowNumber,
+      message: `Group "${name}" was not on the group list, so it was created as ${subjectLabel(parsed.subject)}. Assign it a teacher.`,
+    });
+    return created;
+  }
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const rowNumber = i + 2; // header is row 1
+    const rowNumber = i + 2;
 
     let firstName = pick(row, "First Name", "Firstname", "Name", "Ism");
-    let lastName = pick(row, "Surname", "Last Name", "Lastname", "Familiya");
+    let lastName = pick(row, "Last Name", "Surname", "Lastname", "Familiya");
     const fullName = pick(row, "Full Name", "Student", "Student Name", "FIO");
     if (!firstName && fullName) {
       const split = splitName(fullName);
       firstName = split.firstName;
       lastName = split.lastName;
     }
-    if (!firstName) {
+    if (!firstName && !lastName) {
       report.errors.push({ row: rowNumber, message: "No student name." });
       continue;
     }
 
-    const groupName = pick(row, "Group", "Group Name", "Class Group", "Guruh");
-    const group = groupName ? groupByName.get(keyOf(groupName)) : undefined;
-    if (groupName && !group) {
-      report.errors.push({
-        row: rowNumber,
-        message: `Group "${groupName}" does not exist. Upload the group list first.`,
-      });
-      continue;
-    }
-
-    const grade = pickInt(row, "Grade", "Class", "Sinf") ?? group?.grade ?? null;
+    const grade = pickInt(row, "Grade", "Class", "Sinf");
     if (grade === null) {
-      report.errors.push({ row: rowNumber, message: "No grade and no known group." });
+      report.errors.push({ row: rowNumber, message: "No grade." });
       continue;
     }
 
-    const externalId = pick(row, "Student ID", "ID", "Student Id", "Code") || null;
+    const className = pick(row, "Class Name", "Classname", "Class", "Sinfi") || null;
+    const externalId = pick(row, "UID", "Student ID", "ID", "Code") || null;
 
     const existing = externalId
       ? await prisma.pupil.findFirst({ where: { externalId } })
@@ -156,120 +375,64 @@ async function importStudents(rows: Array<Record<string, string>>): Promise<Uplo
     const pupil = existing
       ? await prisma.pupil.update({
           where: { id: existing.id },
-          data: { firstName, lastName, grade, isActive: true },
+          data: {
+            firstName,
+            lastName,
+            grade,
+            isActive: true,
+            ...(className ? { className } : {}),
+            ...(externalId ? { externalId } : {}),
+          },
         })
       : await prisma.pupil.create({
-          data: { firstName, lastName, grade, externalId },
+          data: { firstName, lastName, grade, className, externalId },
         });
 
     if (existing) report.updated++;
     else report.created++;
 
-    if (!group) continue;
+    // One column per track. A student always has General English; SAT English
+    // and SAT Math are optional, and either one can be taken on its own.
+    const wanted: Array<{ name: string; expected: Subject }> = [];
+    const general = pick(
+      row,
+      "Group | Q1",
+      "Group",
+      "General English",
+      "Gen Eng",
+      "English Group",
+      "Guruh",
+    );
+    const satEnglish = pick(row, "SAT Eng", "SAT English", "SAT-Eng");
+    const satMath = pick(row, "SAT Math", "SAT-Math", "Math");
+    if (general) wanted.push({ name: general, expected: "GENERAL_ENGLISH" });
+    if (satEnglish) wanted.push({ name: satEnglish, expected: "SAT_ENGLISH" });
+    if (satMath) wanted.push({ name: satMath, expected: "SAT_MATH" });
 
-    const alreadyHere = await prisma.enrollment.findFirst({
-      where: { pupilId: pupil.id, groupId: group.id, endDate: null },
-    });
-    if (alreadyHere) continue;
+    for (const entry of wanted) {
+      const group = await resolveGroup(entry.name, rowNumber);
 
-    // The uploaded list is authoritative: a pupil listed in a new group for
-    // the same subject leaves the old one from today.
-    await prisma.enrollment.updateMany({
-      where: {
-        pupilId: pupil.id,
-        endDate: null,
-        group: { subject: group.subject },
-      },
-      data: { endDate: today },
-    });
-    await prisma.enrollment.create({
-      data: { pupilId: pupil.id, groupId: group.id, startDate: today },
-    });
-  }
+      if (group.subject !== entry.expected) {
+        report.warnings.push({
+          row: rowNumber,
+          message: `"${group.name}" is a ${subjectLabel(group.subject)} group but sits in the ${subjectLabel(entry.expected)} column. Check the sheet.`,
+        });
+      }
 
-  return report;
-}
-
-// ---------------------------------------------------------------------------
-// Groups (with the teacher assigned to each)
-// ---------------------------------------------------------------------------
-async function importGroups(rows: Array<Record<string, string>>): Promise<UploadReport> {
-  const report: UploadReport = {
-    type: "groups",
-    rows: rows.length,
-    created: 0,
-    updated: 0,
-    skipped: 0,
-    errors: [],
-    warnings: [],
-  };
-
-  const staff = await prisma.staff.findMany({
-    select: { id: true, loginId: true, fullName: true },
-  });
-  const byLogin = new Map(staff.map((member) => [member.loginId.toLowerCase(), member]));
-  const byName = new Map(staff.map((member) => [keyOf(member.fullName), member]));
-
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const rowNumber = i + 2;
-
-    const name = pick(row, "Group Name", "Group", "Name");
-    if (!name) {
-      report.errors.push({ row: rowNumber, message: "No group name." });
-      continue;
-    }
-
-    const subject = normalizeSubject(pick(row, "Subject", "Lesson", "Fan"));
-    const grade =
-      pickInt(row, "Grade", "Class", "Sinf") ?? Number(name.match(/\d+/)?.[0] ?? NaN);
-    if (!Number.isFinite(grade)) {
-      report.errors.push({ row: rowNumber, message: `No grade for "${name}".` });
-      continue;
-    }
-
-    const teacherLogin = pick(row, "Teacher Login ID", "Teacher Id", "Login Id", "Login");
-    const teacherName = pick(row, "Teacher Full Name", "Teacher", "Teacher Name", "Ustoz");
-    const teacher =
-      (teacherLogin ? byLogin.get(teacherLogin.toLowerCase()) : undefined) ??
-      (teacherName ? byName.get(keyOf(teacherName)) : undefined);
-
-    if ((teacherLogin || teacherName) && !teacher) {
-      report.warnings.push({
-        row: rowNumber,
-        message: `No account for teacher "${teacherName || teacherLogin}". Group saved without a teacher.`,
+      const alreadyHere = await prisma.enrollment.findFirst({
+        where: { pupilId: pupil.id, groupId: group.id, endDate: null },
       });
-    }
+      if (alreadyHere) continue;
 
-    const room = pick(row, "Room", "Xona") || null;
-    const existing = await prisma.group.findFirst({
-      where: { name: { equals: name, mode: "insensitive" } },
-    });
-
-    if (existing) {
-      await prisma.group.update({
-        where: { id: existing.id },
-        data: {
-          name,
-          grade: Number(grade),
-          subject,
-          room,
-          isActive: true,
-          ...(teacher ? { teacherId: teacher.id } : {}),
-        },
+      // The uploaded list is authoritative: a student listed in a different
+      // group for the same track leaves the old one from today.
+      await prisma.enrollment.updateMany({
+        where: { pupilId: pupil.id, endDate: null, group: { subject: group.subject } },
+        data: { endDate: today },
       });
-      report.updated++;
-    } else {
-      await prisma.group.create({
-        data: {
-          name,
-          grade: Number(grade),
-          subject,
-          room,
-          teacherId: teacher?.id ?? null,
-        },
+      await prisma.enrollment.create({
+        data: { pupilId: pupil.id, groupId: group.id, startDate: today },
       });
-      report.created++;
     }
   }
 
@@ -294,13 +457,13 @@ async function importTimetable(
     note: `In force from ${options.effectiveFrom}. Attendance before that date keeps the previous timetable.`,
   };
 
-  const [groups, staff] = await Promise.all([
-    prisma.group.findMany({ select: { id: true, name: true, teacherId: true, subject: true, room: true } }),
-    prisma.staff.findMany({ select: { id: true, loginId: true, fullName: true } }),
+  const [groups, index] = await Promise.all([
+    prisma.group.findMany({
+      select: { id: true, name: true, teacherId: true, subject: true, room: true },
+    }),
+    buildTeacherIndex(),
   ]);
   const groupByName = new Map(groups.map((group) => [keyOf(group.name), group]));
-  const byLogin = new Map(staff.map((member) => [member.loginId.toLowerCase(), member]));
-  const byName = new Map(staff.map((member) => [keyOf(member.fullName), member]));
 
   type Slot = {
     groupId: string;
@@ -312,7 +475,7 @@ async function importTimetable(
   };
   const slots: Slot[] = [];
   const seen = new Set<string>(); // group + day + period
-  const teacherBusy = new Map<string, number>(); // teacher + day + period
+  const teacherBusy = new Map<string, number>();
   const roomBusy = new Map<string, number>();
 
   for (let i = 0; i < rows.length; i++) {
@@ -337,7 +500,7 @@ async function importTimetable(
       continue;
     }
 
-    const period = pickInt(row, "Period", "Lesson", "Para", "Soat");
+    const period = pickInt(row, "Period", "Slot", "Lesson", "Para", "Soat");
     if (!period || period < 1 || period > 8) {
       report.errors.push({ row: rowNumber, message: "Period must be 1 to 8." });
       continue;
@@ -354,22 +517,18 @@ async function importTimetable(
     }
     seen.add(slotKey);
 
-    const teacherLogin = pick(row, "Teacher Login ID", "Teacher Id", "Login Id", "Login");
-    const teacherName = pick(row, "Teacher Full Name", "Teacher", "Teacher Name", "Ustoz");
-    const teacher =
-      (teacherLogin ? byLogin.get(teacherLogin.toLowerCase()) : undefined) ??
-      (teacherName ? byName.get(keyOf(teacherName)) : undefined);
-    const teacherId = teacher?.id ?? group.teacherId ?? null;
-    if ((teacherLogin || teacherName) && !teacher) {
+    const teacherCell = pick(row, "Teacher", "Teacher Full Name", "Teacher Login ID", "Ustoz");
+    const match = teacherCell ? index.find(teacherCell) : undefined;
+    const teacherId = match?.id ?? group.teacherId ?? null;
+    if (teacherCell && !match) {
       report.warnings.push({
         row: rowNumber,
-        message: `No account for teacher "${teacherName || teacherLogin}".`,
+        message: `No single account matches "${teacherCell}". Used the group's own teacher.`,
       });
     }
 
-    const subject = pick(row, "Subject", "Lesson Type", "Fan")
-      ? normalizeSubject(pick(row, "Subject", "Lesson Type", "Fan"))
-      : group.subject;
+    const subjectCell = pick(row, "Subject", "Lesson Type", "Fan");
+    const subject = subjectCell ? normalizeSubject(subjectCell) : group.subject;
     const room = pick(row, "Room", "Xona") || group.room || null;
 
     // Clashes are reported, not blocked — the head teacher decides.
@@ -379,7 +538,7 @@ async function importTimetable(
       if (firstRow) {
         report.warnings.push({
           row: rowNumber,
-          message: `${teacher?.fullName ?? "That teacher"} is already teaching at day ${dayOfWeek} period ${period} (row ${firstRow}).`,
+          message: `That teacher is already teaching at day ${dayOfWeek} period ${period} (row ${firstRow}).`,
         });
       } else {
         teacherBusy.set(busyKey, rowNumber);

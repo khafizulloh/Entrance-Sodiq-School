@@ -248,6 +248,21 @@ The head teacher creates every account and can reset any password.
 - **Reports** — students missing the most classes, highest first, filtered
   by date range and grade, with an Excel export.
 
+## Three tracks, and what a move can do
+
+Every student has a **General English** group (IELTS groups live here too —
+a student takes one or the other, never both). On top of that they may have a
+**SAT English** group, a **SAT Math** group, or both.
+
+A move only ever happens inside one track. The register offers the other
+groups of the same band and track, so a student in `5-E1` can go to `5-E2`,
+`5-E3` or `5-E4`, and a student in `SAT - M1` can only go to `SAT - M2`.
+Nobody can be moved from SAT English into General English.
+
+Bands follow the school's timetable: `5-E*` covers grades 5 and 6, `11-E*`
+covers grades 10 and 11, and every group in a band meets at the same periods,
+so a move never needs a time change.
+
 ## How a move keeps the old marks straight
 
 1. A teacher requests the move (or the head teacher starts one).
@@ -272,18 +287,41 @@ was added, what was updated and which rows were rejected and why.
 
 | Upload | Columns |
 | ------ | ------- |
-| Students | First Name · Surname · Grade · Group · Student ID |
-| Groups | Group Name · Grade · Subject · Teacher Login ID · Teacher Full Name · Room |
-| Timetable | Group Name · Day · Period · Subject · Teacher Login ID · Room |
+| Groups and teachers | Group · Teacher · Room |
+| Students | First Name · Last Name · UID · Grade · Class Name · Group \| Q1 · SAT Eng · SAT Math |
+| Timetable | Group · Day · Period · Teacher · Room |
 
-Upload in this order: **teachers** (under Teachers) → **groups** →
-**students** → **timetable**.
+Upload in this order: **groups** → **students** → **timetable**.
 
-A student already on file is updated, not duplicated (matched on Student ID,
-otherwise on name + grade). A student listed in a different group of the same
-subject leaves the old group from today. The timetable upload also warns about
-teacher clashes, room clashes and duplicate rows instead of silently
-accepting them — joint lessons are fine, so these are warnings, not errors.
+**Groups and teachers.** The sheet the school already keeps puts two
+Group/Teacher blocks side by side on each row, and that is read as well as a
+single pair. Teachers are matched on their login id, their full name, or any
+one part of it, so a column of first names (`Nika`, `Rayxona`) works. A
+teacher with no account gets one, with a starting password the upload report
+prints — switch that off with the checkbox if you would rather create
+accounts by hand.
+
+A group's name says what it is, so there is no Subject column:
+
+| Name | Means |
+| ---- | ----- |
+| `5-E1` | General English, grades 5–6 |
+| `7-E2` | General English, grade 7 |
+| `11-E3` | General English, grades 10–11 |
+| `SAT - E1` | SAT English |
+| `SAT - M1` | SAT Math |
+
+**Students.** One row per student, with up to three groups: `Group | Q1` is
+their General English group, `SAT Eng` and `SAT Math` are optional and
+independent — a student can take one, both or neither. A student already on
+file is updated, not duplicated (matched on UID, otherwise on name + grade).
+A student listed in a different group of the same track leaves the old group
+from today. A group named in the sheet that is not on the group list is
+created from its name, with a warning.
+
+**Timetable.** The upload warns about teacher clashes, room clashes and
+duplicate rows instead of silently accepting them — joint lessons are fine,
+so these are warnings, not errors.
 
 ### A new timetable never rewrites the past
 
@@ -330,17 +368,20 @@ npm run dev                  # http://localhost:3000/attendance
 ```
 
 The seed prints the login ids and passwords it created. It sets up the head
-teacher, the nine teachers, the 20 groups, the parallel-block timetable, the
-3 September to 26 December tracking period and sample class lists. Group-to-teacher pairings
-for the named groups are starting values — upload the real group list and
-timetable to replace them.
+teacher, the nine teachers, the 22 groups, the weekly timetable blocks and
+the 3 September to 26 December tracking period.
+
+Students are not seeded — upload the real list. Set
+`ATTENDANCE_SEED_SAMPLE_STUDENTS=true` for a handful of made-up ones to click
+around with. SAT groups are created without lessons, because their times are
+not set yet: add them with a timetable upload.
 
 ## Attendance tables
 
 - **Staff** — teachers and head teachers (login id, password hash, role).
 - **Term** — the period attendance is tracked for (3 September to 26 December).
-- **Group** — a teaching group, its grade, subject, room and teacher.
-- **Pupil** — a student on a class list.
+- **Group** — a teaching group, its band, track, room and teacher.
+- **Pupil** — a student: name, grade, homeroom class and UID.
 - **Enrollment** — a pupil's membership of a group, with start and end dates.
 - **TimetableVersion** / **TimetableSlot** — each upload and its weekly lessons.
 - **Lesson** — a dated instance of a slot, created when attendance is first saved.

@@ -16,7 +16,7 @@ import {
   toIsoDate,
 } from "@/lib/attendance/dates";
 import { buildRegister, columnKey } from "@/lib/attendance/register";
-import { subjectLabel } from "@/lib/attendance/subjects";
+import { bandLabel, subjectLabel } from "@/lib/attendance/subjects";
 import { activeTerm } from "@/lib/attendance/timetable";
 import { PageHeading, StaffShell } from "./StaffShell";
 import { RegisterTable } from "./RegisterTable";
@@ -136,7 +136,7 @@ export async function GroupRegisterView({
     <StaffShell role={session.role} name={session.name}>
       <PageHeading
         title={group.name}
-        subtitle={`${subjectLabel(group.subject)} · Grade ${group.grade}${
+        subtitle={`${subjectLabel(group.subject)} · ${bandLabel(group.subject, group.grade)}${
           group.room ? ` · Room ${group.room}` : ""
         } · ${register.pupils.length} students${
           group.teacher ? ` · ${group.teacher.fullName}` : ""
