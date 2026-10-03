@@ -79,6 +79,11 @@ function UploadCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<UploadReport | null>(null);
+  const [progress, setProgress] = useState<{
+    stage: string;
+    done: number;
+    total: number;
+  } | null>(null);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -87,6 +92,7 @@ function UploadCard({
     setBusy(true);
     setError(null);
     setReport(null);
+    setProgress({ stage: "Sending the file", done: 0, total: 0 });
 
     const form = new FormData();
     form.set("type", type);
@@ -104,14 +110,58 @@ function UploadCard({
       method: "POST",
       body: form,
     });
-    const body = await res.json().catch(() => ({}));
-    setBusy(false);
 
-    if (!res.ok) {
+    // A rejected file comes back as plain JSON; a started one streams.
+    const streaming = (res.headers.get("content-type") ?? "").includes("ndjson");
+    if (!streaming || !res.body) {
+      const body = await res.json().catch(() => ({}));
+      setBusy(false);
+      setProgress(null);
       setError(body.error ?? "Upload failed.");
       return;
     }
-    setReport(body as UploadReport);
+
+    // Each line is one step; the last one is the finished report.
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finished = false;
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const message = JSON.parse(line);
+          if (message.type === "progress") {
+            setProgress({
+              stage: message.stage,
+              done: message.done ?? 0,
+              total: message.total ?? 0,
+            });
+          } else if (message.type === "report") {
+            setReport(message.report as UploadReport);
+            finished = true;
+          } else if (message.type === "error") {
+            setError(message.error ?? "Upload failed.");
+            finished = true;
+          }
+        }
+      }
+      if (!finished) {
+        setError("The upload stopped before it finished. Try again.");
+      }
+    } catch {
+      setError("The connection dropped during the upload. Try again.");
+    }
+
+    setBusy(false);
+    setProgress(null);
     router.refresh();
   }
 
@@ -237,6 +287,34 @@ function UploadCard({
       <button type="submit" className="btn-brand mt-4" disabled={busy || !file}>
         {busy ? "Uploading…" : "Upload"}
       </button>
+
+      {busy && progress && (
+        <div className="mt-3" aria-live="polite">
+          <div className="flex items-baseline justify-between gap-2 text-xs text-slate-600">
+            <span className="font-medium text-navy">{progress.stage}…</span>
+            {progress.total > 0 && (
+              <span className="tabular-nums">
+                {progress.done} of {progress.total}
+              </span>
+            )}
+          </div>
+          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200">
+            {progress.total > 0 ? (
+              <div
+                className="h-full rounded-full bg-brand transition-[width] duration-300"
+                style={{
+                  width: `${Math.min(100, Math.round((progress.done / progress.total) * 100))}%`,
+                }}
+              />
+            ) : (
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-brand" />
+            )}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Keep this page open until it finishes.
+          </p>
+        </div>
+      )}
 
       {error && (
         <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>

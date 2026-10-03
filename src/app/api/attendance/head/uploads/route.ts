@@ -35,6 +35,16 @@ import { versionForDate } from "@/lib/attendance/timetable";
 
 type RowIssue = { row: number; message: string };
 
+/** Told to the browser while a long upload runs. */
+export type Progress = {
+  type: "progress";
+  stage: string;
+  done: number;
+  total: number;
+};
+
+type OnProgress = (stage: string, done?: number, total?: number) => void;
+
 type NewAccount = { fullName: string; loginId: string; password: string };
 
 type UploadReport = {
@@ -72,6 +82,46 @@ function trimIssues(report: UploadReport): UploadReport {
 
 function keyOf(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Streams the upload back line by line (newline-delimited JSON) so the page
+ * can show what stage it has reached instead of an endless "Uploading…".
+ * The last line is the finished report.
+ */
+function streamed(run: (send: OnProgress) => Promise<UploadReport>): Response {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const write = (payload: unknown) =>
+        controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+      const send: OnProgress = (stage, done = 0, total = 0) =>
+        write({ type: "progress", stage, done, total });
+
+      try {
+        const report = await run(send);
+        write({ type: "report", report });
+      } catch (error) {
+        console.error("Upload failed:", error);
+        write({
+          type: "error",
+          error:
+            "Something went wrong part-way through. Nothing else was changed — fix the file and upload it again.",
+        });
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      // Stops a proxy holding the lines back until the end.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
 
 export async function POST(req: Request) {
@@ -114,10 +164,10 @@ export async function POST(req: Request) {
     );
   }
 
-  if (type === "students") return NextResponse.json(await importStudents(sheet));
+  if (type === "students") return streamed((send) => importStudents(sheet, send));
   if (type === "groups") {
     const createAccounts = String(form.get("createAccounts") ?? "") !== "false";
-    return NextResponse.json(await importGroups(sheet, { createAccounts }));
+    return streamed((send) => importGroups(sheet, { createAccounts }, send));
   }
   if (type === "timetable") {
     const name =
@@ -131,13 +181,12 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    return NextResponse.json(
-      await importTimetable(sheet, {
-        mode,
-        name,
-        effectiveFrom,
-        uploadedById: auth.session.sub,
-      }),
+    return streamed((send) =>
+      importTimetable(
+        sheet,
+        { mode, name, effectiveFrom, uploadedById: auth.session.sub },
+        send,
+      ),
     );
   }
 
@@ -211,6 +260,7 @@ function loginIdFrom(fullName: string, taken: Set<string>): string {
 async function importGroups(
   sheet: ParsedSheet,
   options: { createAccounts: boolean },
+  onProgress: OnProgress = () => {},
 ): Promise<UploadReport> {
   const rows = sheet.rows;
   const report: UploadReport = {
@@ -242,9 +292,12 @@ async function importGroups(
     [["Group_3"], ["Teacher_3"]],
   ];
 
+  onProgress("Reading the sheet", 0, rows.length);
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNumber = rowNumberOf(row, sheet.headerRow + 1 + i);
+    onProgress("Saving groups", i, rows.length);
 
     for (let pairIndex = 0; pairIndex < pairs.length; pairIndex++) {
       const [groupNames, teacherNames] = pairs[pairIndex];
@@ -344,8 +397,31 @@ async function importGroups(
 
 // ---------------------------------------------------------------------------
 // Students, with up to three groups each
+//
+// Written in bulk rather than row by row: a 250-student list used to mean
+// about 1,500 separate database round trips, which took over a minute on a
+// hosted database. It now takes a handful of queries.
 // ---------------------------------------------------------------------------
-async function importStudents(sheet: ParsedSheet): Promise<UploadReport> {
+
+type StudentIntent = {
+  rowNumber: number;
+  firstName: string;
+  lastName: string;
+  grade: number;
+  className: string | null;
+  externalId: string | null;
+  groups: string[];
+  expected: Subject[];
+};
+
+function nameKey(firstName: string, lastName: string, grade: number) {
+  return `${firstName.trim().toLowerCase()}|${lastName.trim().toLowerCase()}|${grade}`;
+}
+
+async function importStudents(
+  sheet: ParsedSheet,
+  onProgress: OnProgress = () => {},
+): Promise<UploadReport> {
   const rows = sheet.rows;
   const report: UploadReport = {
     type: "students",
@@ -362,29 +438,9 @@ async function importStudents(sheet: ParsedSheet): Promise<UploadReport> {
     warnings: [],
   };
 
-  const groups = await prisma.group.findMany({
-    select: { id: true, name: true, grade: true, subject: true },
-  });
-  const groupByName = new Map(groups.map((group) => [keyOf(group.name), group]));
-  const today = toDbDate(schoolToday());
-
-  /** Finds the group, creating it from its name if the sheet knows one we do not. */
-  async function resolveGroup(name: string, rowNumber: number) {
-    const existing = groupByName.get(keyOf(name));
-    if (existing) return existing;
-
-    const parsed = parseGroupName(name);
-    const created = await prisma.group.create({
-      data: { name, grade: parsed.grade, subject: parsed.subject },
-      select: { id: true, name: true, grade: true, subject: true },
-    });
-    groupByName.set(keyOf(name), created);
-    report.warnings.push({
-      row: rowNumber,
-      message: `Group "${name}" was not on the group list, so it was created as ${subjectLabel(parsed.subject)}. Assign it a teacher.`,
-    });
-    return created;
-  }
+  // ---- 1. read every row ------------------------------------------------
+  onProgress("Reading the sheet", 0, rows.length);
+  const intents: StudentIntent[] = [];
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -409,41 +465,9 @@ async function importStudents(sheet: ParsedSheet): Promise<UploadReport> {
       continue;
     }
 
-    const className = pick(row, "Class Name", "Classname", "Class", "Sinfi") || null;
-    const externalId = pick(row, "UID", "Student ID", "ID", "Code") || null;
-
-    const existing = externalId
-      ? await prisma.pupil.findFirst({ where: { externalId } })
-      : await prisma.pupil.findFirst({
-          where: {
-            firstName: { equals: firstName, mode: "insensitive" },
-            lastName: { equals: lastName, mode: "insensitive" },
-            grade,
-          },
-        });
-
-    const pupil = existing
-      ? await prisma.pupil.update({
-          where: { id: existing.id },
-          data: {
-            firstName,
-            lastName,
-            grade,
-            isActive: true,
-            ...(className ? { className } : {}),
-            ...(externalId ? { externalId } : {}),
-          },
-        })
-      : await prisma.pupil.create({
-          data: { firstName, lastName, grade, className, externalId },
-        });
-
-    if (existing) report.updated++;
-    else report.created++;
-
-    // One column per track. A student always has General English; SAT English
-    // and SAT Math are optional, and either one can be taken on its own.
-    const wanted: Array<{ name: string; expected: Subject }> = [];
+    // One column per track. General English is the one everybody has.
+    const groups: string[] = [];
+    const expected: Subject[] = [];
     const general = pick(
       row,
       "Group | Q1",
@@ -455,36 +479,223 @@ async function importStudents(sheet: ParsedSheet): Promise<UploadReport> {
     );
     const satEnglish = pick(row, "SAT Eng", "SAT English", "SAT-Eng");
     const satMath = pick(row, "SAT Math", "SAT-Math", "Math");
-    if (general) wanted.push({ name: general, expected: "GENERAL_ENGLISH" });
-    if (satEnglish) wanted.push({ name: satEnglish, expected: "SAT_ENGLISH" });
-    if (satMath) wanted.push({ name: satMath, expected: "SAT_MATH" });
+    if (general) {
+      groups.push(general);
+      expected.push("GENERAL_ENGLISH");
+    }
+    if (satEnglish) {
+      groups.push(satEnglish);
+      expected.push("SAT_ENGLISH");
+    }
+    if (satMath) {
+      groups.push(satMath);
+      expected.push("SAT_MATH");
+    }
 
-    for (const entry of wanted) {
-      const group = await resolveGroup(entry.name, rowNumber);
+    intents.push({
+      rowNumber,
+      firstName,
+      lastName,
+      grade,
+      className: pick(row, "Class Name", "Classname", "Class", "Sinfi") || null,
+      externalId: pick(row, "UID", "Student ID", "ID", "Code") || null,
+      groups,
+      expected,
+    });
+  }
 
-      if (group.subject !== entry.expected) {
-        report.warnings.push({
-          row: rowNumber,
-          message: `"${group.name}" is a ${subjectLabel(group.subject)} group but sits in the ${subjectLabel(entry.expected)} column. Check the sheet.`,
-        });
-      }
+  if (intents.length === 0) {
+    report.errors.unshift({
+      row: 0,
+      message: `No students were read. The app used the sheet "${sheet.sheetName}" with headings on row ${sheet.headerRow}: ${
+        sheet.columns.join(" · ") || "none found"
+      }. It needs a First Name column and a Last Name column (or one Full Name column).`,
+    });
+    return trimIssues(report);
+  }
 
-      const alreadyHere = await prisma.enrollment.findFirst({
-        where: { pupilId: pupil.id, groupId: group.id, endDate: null },
-      });
-      if (alreadyHere) continue;
+  // ---- 2. the groups they name ------------------------------------------
+  onProgress("Checking the groups", 0, intents.length);
+  const known = await prisma.group.findMany({
+    select: { id: true, name: true, grade: true, subject: true },
+  });
+  const groupByName = new Map(known.map((group) => [keyOf(group.name), group]));
 
-      // The uploaded list is authoritative: a student listed in a different
-      // group for the same track leaves the old one from today.
-      await prisma.enrollment.updateMany({
-        where: { pupilId: pupil.id, endDate: null, group: { subject: group.subject } },
-        data: { endDate: today },
-      });
-      await prisma.enrollment.create({
-        data: { pupilId: pupil.id, groupId: group.id, startDate: today },
+  const missing = new Map<string, string>(); // key -> name as written
+  for (const intent of intents) {
+    for (const name of intent.groups) {
+      if (!groupByName.has(keyOf(name))) missing.set(keyOf(name), name);
+    }
+  }
+  if (missing.size > 0) {
+    const createdGroups = await prisma.group.createManyAndReturn({
+      data: [...missing.values()].map((name) => {
+        const parsed = parseGroupName(name);
+        return { name, grade: parsed.grade, subject: parsed.subject };
+      }),
+      select: { id: true, name: true, grade: true, subject: true },
+    });
+    for (const group of createdGroups) {
+      groupByName.set(keyOf(group.name), group);
+      report.warnings.push({
+        row: 0,
+        message: `Group "${group.name}" was not on the group list, so it was created as ${subjectLabel(group.subject)}. Give it a teacher.`,
       });
     }
   }
+
+  // ---- 3. who is already on file ----------------------------------------
+  onProgress("Matching against the students you already have", 0, intents.length);
+  const uids = intents.map((intent) => intent.externalId).filter(Boolean) as string[];
+  const grades = [...new Set(intents.map((intent) => intent.grade))];
+
+  const [byUidRows, byGradeRows] = await Promise.all([
+    uids.length > 0
+      ? prisma.pupil.findMany({ where: { externalId: { in: uids } } })
+      : Promise.resolve([]),
+    prisma.pupil.findMany({ where: { grade: { in: grades } } }),
+  ]);
+
+  const byUid = new Map(byUidRows.map((pupil) => [pupil.externalId as string, pupil]));
+  const byName = new Map<string, (typeof byGradeRows)[number]>();
+  for (const pupil of byGradeRows) {
+    const key = nameKey(pupil.firstName, pupil.lastName, pupil.grade);
+    if (!byName.has(key)) byName.set(key, pupil);
+  }
+
+  type Resolved = { intent: StudentIntent; pupilId: string };
+  const resolved: Resolved[] = [];
+  const toCreate: StudentIntent[] = [];
+  const toUpdate: Array<{ id: string; intent: StudentIntent }> = [];
+
+  for (const intent of intents) {
+    const existing =
+      (intent.externalId ? byUid.get(intent.externalId) : undefined) ??
+      byName.get(nameKey(intent.firstName, intent.lastName, intent.grade));
+
+    if (!existing) {
+      toCreate.push(intent);
+      continue;
+    }
+
+    const changed =
+      existing.firstName !== intent.firstName ||
+      existing.lastName !== intent.lastName ||
+      existing.grade !== intent.grade ||
+      !existing.isActive ||
+      (intent.className !== null && existing.className !== intent.className) ||
+      (intent.externalId !== null && existing.externalId !== intent.externalId);
+
+    if (changed) toUpdate.push({ id: existing.id, intent });
+    resolved.push({ intent, pupilId: existing.id });
+    report.updated++;
+  }
+
+  // ---- 4. write the students --------------------------------------------
+  if (toCreate.length > 0) {
+    onProgress("Adding new students", 0, toCreate.length);
+    const createdPupils = await prisma.pupil.createManyAndReturn({
+      data: toCreate.map((intent) => ({
+        firstName: intent.firstName,
+        lastName: intent.lastName,
+        grade: intent.grade,
+        className: intent.className,
+        externalId: intent.externalId,
+      })),
+      select: { id: true },
+    });
+    createdPupils.forEach((pupil, index) => {
+      resolved.push({ intent: toCreate[index], pupilId: pupil.id });
+    });
+    report.created = createdPupils.length;
+    onProgress("Adding new students", createdPupils.length, createdPupils.length);
+  }
+
+  if (toUpdate.length > 0) {
+    onProgress("Updating students already on file", 0, toUpdate.length);
+    const batchSize = 20;
+    for (let i = 0; i < toUpdate.length; i += batchSize) {
+      const batch = toUpdate.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map((entry) =>
+          prisma.pupil.update({
+            where: { id: entry.id },
+            data: {
+              firstName: entry.intent.firstName,
+              lastName: entry.intent.lastName,
+              grade: entry.intent.grade,
+              isActive: true,
+              ...(entry.intent.className ? { className: entry.intent.className } : {}),
+              ...(entry.intent.externalId ? { externalId: entry.intent.externalId } : {}),
+            },
+          }),
+        ),
+      );
+      onProgress(
+        "Updating students already on file",
+        Math.min(i + batchSize, toUpdate.length),
+        toUpdate.length,
+      );
+    }
+  }
+
+  // ---- 5. put them in their groups --------------------------------------
+  onProgress("Putting students in their groups", 0, resolved.length);
+  const today = toDbDate(schoolToday());
+  const pupilIds = resolved.map((entry) => entry.pupilId);
+
+  const active = await prisma.enrollment.findMany({
+    where: { pupilId: { in: pupilIds }, endDate: null },
+    select: { id: true, pupilId: true, groupId: true, group: { select: { subject: true } } },
+  });
+
+  // One place per student per track.
+  const current = new Map<string, { id: string | null; groupId: string }>();
+  for (const enrollment of active) {
+    current.set(`${enrollment.pupilId}|${enrollment.group.subject}`, {
+      id: enrollment.id,
+      groupId: enrollment.groupId,
+    });
+  }
+
+  const toEnd: string[] = [];
+  const toEnroll: Array<{ pupilId: string; groupId: string; startDate: Date }> = [];
+
+  for (const entry of resolved) {
+    entry.intent.groups.forEach((name, index) => {
+      const group = groupByName.get(keyOf(name));
+      if (!group) return;
+
+      const expected = entry.intent.expected[index];
+      if (group.subject !== expected) {
+        report.warnings.push({
+          row: entry.intent.rowNumber,
+          message: `"${group.name}" is a ${subjectLabel(group.subject)} group but sits in the ${subjectLabel(expected)} column. Check the sheet.`,
+        });
+      }
+
+      const key = `${entry.pupilId}|${group.subject}`;
+      const existing = current.get(key);
+      if (existing?.groupId === group.id) return;
+
+      // The uploaded list is authoritative: a student listed in a different
+      // group for the same track leaves the old one from today.
+      if (existing?.id) toEnd.push(existing.id);
+      toEnroll.push({ pupilId: entry.pupilId, groupId: group.id, startDate: today });
+      current.set(key, { id: null, groupId: group.id });
+    });
+  }
+
+  for (let i = 0; i < toEnd.length; i += 500) {
+    await prisma.enrollment.updateMany({
+      where: { id: { in: toEnd.slice(i, i + 500) } },
+      data: { endDate: today },
+    });
+  }
+  if (toEnroll.length > 0) {
+    await prisma.enrollment.createMany({ data: toEnroll });
+  }
+  onProgress("Putting students in their groups", resolved.length, resolved.length);
 
   if (report.created + report.updated === 0) {
     report.errors.unshift({
@@ -509,6 +720,7 @@ async function importTimetable(
     effectiveFrom: string;
     uploadedById: string;
   },
+  onProgress: OnProgress = () => {},
 ): Promise<UploadReport> {
   const rows = sheet.rows;
   const report: UploadReport = {
@@ -536,6 +748,7 @@ async function importTimetable(
         })))
       : null;
 
+  onProgress("Reading the sheet", 0, rows.length);
   const [groups, index] = await Promise.all([
     prisma.group.findMany({
       select: { id: true, name: true, teacherId: true, subject: true, room: true },
@@ -670,6 +883,7 @@ async function importTimetable(
     return trimIssues(report);
   }
 
+  onProgress("Saving the lessons", 0, slots.length);
   if (options.mode === "add" && target) {
     const added = await prisma.timetableSlot.createMany({
       data: slots.map((slot) => ({ ...slot, versionId: target.id })),

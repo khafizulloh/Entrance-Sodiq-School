@@ -292,6 +292,12 @@ Every upload reports back which sheet and which heading row it used, with
 the headings it found, plus what was added, what was updated and which rows
 were rejected and why.
 
+A long upload shows its progress as it runs — the stage it is on and how
+many rows it has done — because the page streams the work back line by line
+instead of waiting in silence. The student list is written in bulk, so a
+250-student file takes a handful of database queries rather than one per
+row.
+
 | Upload | Columns |
 | ------ | ------- |
 | Groups and teachers | Group · Teacher · Room |
