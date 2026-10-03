@@ -419,9 +419,15 @@ the copy that was entered first.
 npm install
 cp .env.example .env         # fill in DATABASE_URL and AUTH_SECRET
 npm run db:push              # creates the attendance tables too
-npm run db:seed:attendance   # staff, groups, timetable, class lists, term
+npm run db:seed:attendance   # staff, groups, timetable, term
 npm run dev                  # http://localhost:3000/attendance
 ```
+
+Stop the dev server before `git pull`. Changing the files underneath a
+running dev server leaves its build cache half-updated, and the page then
+fails with something like *undefined is not an object (evaluating
+'originalFactory.call')*. If that happens, stop it and start it with
+`npm run dev:fresh`, which clears the cache first.
 
 The seed prints the login ids and passwords it created. It sets up the head
 teacher, the nine teachers, the 22 groups, the weekly timetable blocks and

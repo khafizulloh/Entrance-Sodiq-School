@@ -5,6 +5,7 @@
   "description": "Online entrance test and student data collection platform for Sodiq School.",
   "scripts": {
     "dev": "next dev",
+    "dev:fresh": "rm -rf .next && next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
