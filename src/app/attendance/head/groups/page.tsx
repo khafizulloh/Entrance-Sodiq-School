@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { GroupTeacherPicker } from "@/components/attendance/GroupTeacherPicker";
+import { NewGroupForm } from "@/components/attendance/NewGroupForm";
 import { PageHeading, StaffShell } from "@/components/attendance/StaffShell";
 import { getStaffSession } from "@/lib/attendance/auth";
 import { schoolToday } from "@/lib/attendance/dates";
@@ -67,9 +68,12 @@ export default async function HeadGroups() {
         title="Groups"
         subtitle="Every group, its teacher and its size. Open one to see or fix its register."
         action={
-          <Link href="/attendance/head/uploads" className="btn-outline">
-            Upload group list
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/attendance/head/uploads" className="btn-outline">
+              Upload group list
+            </Link>
+            <NewGroupForm teachers={teachers} />
+          </div>
         }
       />
 

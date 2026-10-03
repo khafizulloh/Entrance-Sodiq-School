@@ -573,6 +573,7 @@ export function RegisterTable({
           fromGroupId={data.group.id}
           fromGroupName={data.group.name}
           targets={moveTargets}
+          currentByTrack={{ [data.group.subject]: data.group.name }}
           onClose={() => setMovePupil(null)}
           onDone={() => {
             setMovePupil(null);

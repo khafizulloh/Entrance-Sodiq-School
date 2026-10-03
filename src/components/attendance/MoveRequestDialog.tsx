@@ -4,9 +4,12 @@ import { useState } from "react";
 import { SUBJECTS, bandLabel, subjectLabel } from "@/lib/attendance/subjects";
 
 /**
- * "Wrong student in this list?" — asks the head teacher to move a student to
- * another group. Nothing changes until the head teacher approves, in the app
- * or from the Telegram bot.
+ * Asks the head teacher to put a student in another group. Nothing changes
+ * until they approve, in the app or from the Telegram bot.
+ *
+ * Whether that is a move or simply joining depends on the track chosen: a
+ * student with no SAT Math group is added to one, while a student already in
+ * 5-E1 is moved out of it. The wording follows the choice.
  */
 
 export type MoveTarget = {
@@ -22,6 +25,7 @@ export function MoveRequestDialog({
   fromGroupId,
   fromGroupName,
   targets,
+  currentByTrack,
   onClose,
   onDone,
   headMode = false,
@@ -30,6 +34,8 @@ export function MoveRequestDialog({
   fromGroupId: string | null;
   fromGroupName: string | null;
   targets: MoveTarget[];
+  /** The group the student is in now for each track, if any. */
+  currentByTrack: Record<string, string>;
   onClose: () => void;
   onDone: (message: string) => void;
   headMode?: boolean;
@@ -39,6 +45,12 @@ export function MoveRequestDialog({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const chosen = targets.find((target) => target.id === toGroupId) ?? null;
+  const leaving = chosen ? (currentByTrack[chosen.subject] ?? null) : null;
+  // No group in that track yet, so this adds them rather than moving them.
+  const isAdd = Boolean(chosen) && !leaving;
+  const action = isAdd ? "Add to a group" : headMode ? "Move student" : "Request a move";
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -66,7 +78,7 @@ export function MoveRequestDialog({
 
     onDone(
       headMode
-        ? "Move created. Confirm it in the move requests queue."
+        ? `${isAdd ? "Request" : "Move"} created. Confirm it in the move requests queue.`
         : "Request sent to the head teacher.",
     );
   }
@@ -74,12 +86,10 @@ export function MoveRequestDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-navy/50 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <h2 className="text-lg font-bold text-navy">
-          {headMode ? "Move student" : "Request a move"}
-        </h2>
+        <h2 className="text-lg font-bold text-navy">{action}</h2>
         <p className="mt-1 text-sm text-slate-600">
           {pupil.firstName} {pupil.lastName}
-          {fromGroupName ? ` · currently in ${fromGroupName}` : ""}
+          {fromGroupName ? ` · currently in ${fromGroupName}` : " · no group yet"}
         </p>
 
         <form onSubmit={submit} className="mt-4 space-y-4">
@@ -121,22 +131,45 @@ export function MoveRequestDialog({
             </p>
           </div>
 
-          <label className="flex items-start gap-2.5 rounded-lg bg-slate-50 p-3 text-sm">
-            <input
-              type="checkbox"
-              checked={moveRecords}
-              onChange={(event) => setMoveRecords(event.target.checked)}
-              className="mt-0.5 h-4 w-4"
-            />
-            <span>
-              <span className="font-medium text-navy">Carry existing records across</span>
-              <span className="mt-0.5 block text-xs text-slate-500">
-                Attendance and marks already taken follow the student and show in the new
-                group&apos;s register in a lighter colour, so everyone can see they were
-                taken in the previous group.
+          {chosen && (
+            <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+              {isAdd ? (
+                <>
+                  {pupil.firstName} has no {subjectLabel(chosen.subject)} group.
+                  Approving puts them in{" "}
+                  <span className="font-semibold text-navy">{chosen.name}</span>.
+                </>
+              ) : (
+                <>
+                  {pupil.firstName} is in{" "}
+                  <span className="font-semibold text-navy">{leaving}</span> for{" "}
+                  {subjectLabel(chosen.subject)}. Approving moves them to{" "}
+                  <span className="font-semibold text-navy">{chosen.name}</span>.
+                </>
+              )}
+            </p>
+          )}
+
+          {!isAdd && (
+            <label className="flex items-start gap-2.5 rounded-lg bg-slate-50 p-3 text-sm">
+              <input
+                type="checkbox"
+                checked={moveRecords}
+                onChange={(event) => setMoveRecords(event.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span>
+                <span className="font-medium text-navy">
+                  Carry existing records across
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  Attendance and marks already taken follow the student and show in the
+                  new group&apos;s register in a lighter colour, so everyone can see they
+                  were taken in the previous group.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          )}
 
           <div>
             <label className="label" htmlFor="reason">
@@ -147,7 +180,7 @@ export function MoveRequestDialog({
               className="input min-h-[72px]"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="e.g. This student is on my list but attends 5 LONDON."
+              placeholder="e.g. This student is on my list but attends 5-E2."
             />
           </div>
 
@@ -164,7 +197,7 @@ export function MoveRequestDialog({
               className="btn-brand flex-1"
               disabled={busy || !toGroupId}
             >
-              {busy ? "Sending…" : headMode ? "Create move" : "Send request"}
+              {busy ? "Sending…" : headMode ? action : "Send request"}
             </button>
           </div>
         </form>

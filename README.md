@@ -233,8 +233,9 @@ The head teacher creates every account and can reset any password.
 - **Move requests** — approve or reject. Each card says how many records
   would travel with the student. Manual moves the head teacher starts are
   created the same way, so every move is approved and confirmed.
-- **Groups / Students / Teachers** — groups with their teacher and size,
-  the searchable student list with a manual move, and the account manager
+- **Groups / Students / Teachers** — groups with their teacher and size and
+  a **New group** button, the searchable student list with a manual move,
+  and the account manager
   (create an account, change a name, login id, password or role). A group's
   teacher can be changed from the Groups page on its own, without touching
   any other detail: the timetable from today follows the new teacher, while
@@ -258,6 +259,13 @@ A move only ever happens inside one track. The register offers the other
 groups of the same band and track, so a student in `5-E1` can go to `5-E2`,
 `5-E3` or `5-E4`, and a student in `SAT - M1` can only go to `SAT - M2`.
 Nobody can be moved from SAT English into General English.
+
+A student with no group in a track is **added** to one rather than moved.
+The student list says *Add to a group* instead of *Move* for a student with
+no groups at all, and once a destination is chosen the request spells out
+what approving will do — "Munisa has no SAT Math group. Approving puts them
+in SAT - M1" — with no mention of carrying records, because there are none
+to carry.
 
 Bands follow the school's timetable: `5-E*` covers grades 5 and 6, `11-E*`
 covers grades 10 and 11, and every group in a band meets at the same periods,
@@ -387,6 +395,23 @@ Lunch is not a timetabled period: grades 5–9 take period 5, grades 10–11 tak
 period 6. Times live in `src/lib/attendance/periods.ts`; "now" is read in
 `SCHOOL_TIMEZONE` (Asia/Tashkent by default) so the current lesson is right
 even when the server runs abroad.
+
+## Merging duplicate students
+
+If the same student ends up on file twice — an early upload, a name typed
+two ways — merge them:
+
+```bash
+npm run db:fix:students            # shows what it would do
+npm run db:fix:students -- --apply # does it
+```
+
+Two records are the same student when they share a UID, or a first name, a
+surname and a grade. Everything the copies hold moves onto the one that is
+kept: attendance, marks, notes, group places and move requests. Where both
+copies have a record for the same lesson, the one with a mark wins, then the
+one changed most recently. The kept record takes the spelling and the UID of
+the copy that was entered first.
 
 ## Set it up
 

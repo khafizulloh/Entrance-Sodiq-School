@@ -155,7 +155,7 @@ export function StudentDirectory({
                     className="rounded border border-slate-200 px-2.5 py-1 text-xs font-semibold text-navy hover:border-brand hover:bg-brand/10"
                     onClick={() => setMoving(student)}
                   >
-                    Move
+                    {student.groups.length > 0 ? "Move" : "Add to a group"}
                   </button>
                 </td>
               </tr>
@@ -175,6 +175,9 @@ export function StudentDirectory({
           fromGroupId={null}
           fromGroupName={moving.groups.map((group) => group.name).join(", ") || null}
           targets={targetsFor(moving)}
+          currentByTrack={Object.fromEntries(
+            moving.groups.map((group) => [group.subject, group.name]),
+          )}
           headMode
           onClose={() => setMoving(null)}
           onDone={(text) => {

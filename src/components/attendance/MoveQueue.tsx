@@ -50,11 +50,14 @@ export function MoveQueue({ requests }: { requests: MoveRow[] }) {
       return;
     }
 
+    const request = requests.find((row) => row.id === id);
     setDone(
       decision === "APPROVE"
-        ? body.recordsMoved > 0
-          ? `Moved. ${body.recordsMoved} earlier record(s) carried across and shown in a lighter colour in the new group.`
-          : "Moved. The student had no records to carry."
+        ? !request?.fromGroup
+          ? `Done. ${request?.pupilName ?? "The student"} is now in ${request?.toGroup ?? "the group"}.`
+          : body.recordsMoved > 0
+            ? `Moved. ${body.recordsMoved} earlier record(s) carried across and shown in a lighter colour in the new group.`
+            : "Moved. The student had no records to carry."
         : "Request rejected.",
     );
     router.refresh();
@@ -91,9 +94,18 @@ export function MoveQueue({ requests }: { requests: MoveRow[] }) {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
+                    <span
+                      className={`mb-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${
+                        request.fromGroup
+                          ? "bg-navy/10 text-navy"
+                          : "bg-green-100 text-green-800"
+                      }`}
+                    >
+                      {request.fromGroup ? "Move" : "Add to a group"}
+                    </span>
                     <p className="text-lg font-bold text-navy">{request.pupilName}</p>
                     <p className="mt-0.5 text-sm text-slate-600">
-                      Grade {request.grade} · {request.fromGroup ?? "no group"}{" "}
+                      Grade {request.grade} · {request.fromGroup ?? "no group yet"}{" "}
                       <span className="font-bold text-brand-dark">→</span> {request.toGroup}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
@@ -131,11 +143,13 @@ export function MoveQueue({ requests }: { requests: MoveRow[] }) {
                 )}
 
                 <p className="mt-3 text-xs text-slate-500">
-                  {request.recordCount === 0
-                    ? "This student has no attendance records yet, so the move is a clean swap of class lists."
-                    : request.moveRecords
-                      ? `${request.recordCount} existing record(s) will travel with the student and appear faded in ${request.toGroup}, marked as taken in ${request.fromGroup ?? "the previous group"}.`
-                      : `${request.recordCount} existing record(s) will stay with ${request.fromGroup ?? "the previous group"} only.`}
+                  {!request.fromGroup
+                    ? `${request.pupilName} has no group in this track yet, so approving simply puts them in ${request.toGroup}.`
+                    : request.recordCount === 0
+                      ? "This student has no attendance records yet, so the move is a clean swap of class lists."
+                      : request.moveRecords
+                        ? `${request.recordCount} existing record(s) will travel with the student and appear faded in ${request.toGroup}, marked as taken in ${request.fromGroup}.`
+                        : `${request.recordCount} existing record(s) will stay with ${request.fromGroup} only.`}
                 </p>
               </div>
             ))}

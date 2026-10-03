@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "db:seed:attendance": "tsx prisma/seed-attendance.ts"
+    "db:seed:attendance": "tsx prisma/seed-attendance.ts",
+    "db:fix:students": "tsx prisma/fix-duplicate-students.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
