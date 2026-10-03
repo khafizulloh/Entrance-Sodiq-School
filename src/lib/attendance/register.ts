@@ -64,16 +64,24 @@ export function columnKey(date: IsoDate, period: number): string {
 export async function groupRoster(groupId: string): Promise<RegisterPupil[]> {
   const enrollments = await prisma.enrollment.findMany({
     where: { groupId, endDate: null, pupil: { isActive: true } },
+    orderBy: { startDate: "asc" },
     include: { pupil: true },
   });
 
-  return enrollments
-    .map((enrollment) => ({
+  // A pupil with two open places in one group (an old import fault) must
+  // still appear once.
+  const byPupil = new Map<string, RegisterPupil>();
+  for (const enrollment of enrollments) {
+    if (byPupil.has(enrollment.pupil.id)) continue;
+    byPupil.set(enrollment.pupil.id, {
       id: enrollment.pupil.id,
       firstName: enrollment.pupil.firstName,
       lastName: enrollment.pupil.lastName,
       joinedOn: toIsoDate(enrollment.startDate),
-    }))
+    });
+  }
+
+  return [...byPupil.values()]
     .sort(
       (a, b) =>
         a.firstName.localeCompare(b.firstName) || a.lastName.localeCompare(b.lastName),

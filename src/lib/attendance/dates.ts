@@ -87,6 +87,49 @@ export function weekdaysBetween(from: IsoDate, to: IsoDate): IsoDate[] {
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+/**
+ * Month and day names are written out rather than taken from
+ * `toLocaleDateString`, because Node and Safari disagree (Node says "Sept",
+ * Safari says "Sep") and a server/browser mismatch breaks the page.
+ */
+const MONTHS_SHORT = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const MONTHS_LONG = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+export function monthShortName(monthNumber: number): string {
+  return MONTHS_SHORT[monthNumber - 1] ?? "";
+}
+
+export function monthLongName(monthNumber: number): string {
+  return MONTHS_LONG[monthNumber - 1] ?? "";
+}
+
 export function dayName(dayOfWeek: number): string {
   return DAY_NAMES[dayOfWeek - 1] ?? "";
 }
@@ -97,20 +140,20 @@ export function shortDayName(dayOfWeek: number): string {
 
 /** "3 Oct" — the compact label used in register column headers. */
 export function shortDateLabel(iso: IsoDate): string {
-  const d = toDbDate(iso);
-  const month = d.toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
-  return `${d.getUTCDate()} ${month}`;
+  const [, month, day] = iso.split("-").map(Number);
+  return `${day} ${monthShortName(month)}`;
+}
+
+/** "Thu 3 Sep" — a column heading in the register. */
+export function columnDateLabel(iso: IsoDate): string {
+  const [, month, day] = iso.split("-").map(Number);
+  return `${shortDayName(dayOfWeekOf(iso))} ${day} ${monthShortName(month)}`;
 }
 
 /** "Friday, 3 October 2026" */
 export function longDateLabel(iso: IsoDate): string {
-  return toDbDate(iso).toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  const [year, month, day] = iso.split("-").map(Number);
+  return `${dayName(dayOfWeekOf(iso))}, ${day} ${monthLongName(month)} ${year}`;
 }
 
 export function isValidIsoDate(value: unknown): value is IsoDate {
@@ -141,8 +184,7 @@ export function monthEnd(key: MonthKey): IsoDate {
 
 export function monthLabel(key: MonthKey): string {
   const [year, month] = key.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, 1));
-  return `${date.toLocaleString("en-GB", { month: "long", timeZone: "UTC" })} ${year}`;
+  return `${monthLongName(month)} ${year}`;
 }
 
 /** Every month touched by a date range, oldest first. */

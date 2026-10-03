@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { columnDateLabel } from "@/lib/attendance/dates";
 import { periodLabel } from "@/lib/attendance/periods";
 import {
   type AttendanceStatus,
@@ -587,12 +588,8 @@ export function RegisterTable({
   );
 }
 
-function columnLabel(date: string): string {
-  const parsed = new Date(`${date}T00:00:00.000Z`);
-  const day = parsed.toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" });
-  const month = parsed.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
-  return `${day} ${parsed.getUTCDate()} ${month}`;
-}
+// Shared with the server so both render the same text.
+const columnLabel = columnDateLabel;
 
 function SaveBadge({ state }: { state: "idle" | "saving" | "saved" | "error" }) {
   if (state === "idle") return null;

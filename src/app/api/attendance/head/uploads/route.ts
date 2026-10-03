@@ -642,26 +642,57 @@ async function importStudents(
   // ---- 5. put them in their groups --------------------------------------
   onProgress("Putting students in their groups", 0, resolved.length);
   const today = toDbDate(schoolToday());
-  const pupilIds = resolved.map((entry) => entry.pupilId);
+  const pupilIds = [...new Set(resolved.map((entry) => entry.pupilId))];
 
   const active = await prisma.enrollment.findMany({
     where: { pupilId: { in: pupilIds }, endDate: null },
+    orderBy: { startDate: "asc" },
     select: { id: true, pupilId: true, groupId: true, group: { select: { subject: true } } },
   });
 
-  // One place per student per track.
-  const current = new Map<string, { id: string | null; groupId: string }>();
+  type Place = { id: string | null; groupId: string; subject: string };
+  const places = new Map<string, Place[]>();
   for (const enrollment of active) {
-    current.set(`${enrollment.pupilId}|${enrollment.group.subject}`, {
+    const list = places.get(enrollment.pupilId) ?? [];
+    list.push({
       id: enrollment.id,
       groupId: enrollment.groupId,
+      subject: enrollment.group.subject,
     });
+    places.set(enrollment.pupilId, list);
   }
 
-  const toEnd: string[] = [];
+  const toEnd = new Set<string>();
   const toEnroll: Array<{ pupilId: string; groupId: string; startDate: Date }> = [];
+  const planned = new Set<string>(); // pupil + group, so one upload cannot enroll twice
+  const seenPupils = new Set<string>();
+
+  // A student can hold two places in the same group only through an earlier
+  // fault. Keep the oldest and close the rest, whatever the sheet says.
+  for (const [pupilId, list] of places) {
+    const kept = new Set<string>();
+    for (const place of list) {
+      if (kept.has(place.groupId)) {
+        if (place.id) toEnd.add(place.id);
+      } else {
+        kept.add(place.groupId);
+      }
+    }
+    places.set(
+      pupilId,
+      list.filter((place) => !place.id || !toEnd.has(place.id)),
+    );
+  }
 
   for (const entry of resolved) {
+    if (seenPupils.has(entry.pupilId)) {
+      report.warnings.push({
+        row: entry.intent.rowNumber,
+        message: `${entry.intent.firstName} ${entry.intent.lastName} is on the list more than once. The last row wins.`,
+      });
+    }
+    seenPupils.add(entry.pupilId);
+
     entry.intent.groups.forEach((name, index) => {
       const group = groupByName.get(keyOf(name));
       if (!group) return;
@@ -674,26 +705,38 @@ async function importStudents(
         });
       }
 
-      const key = `${entry.pupilId}|${group.subject}`;
-      const existing = current.get(key);
-      if (existing?.groupId === group.id) return;
+      const list = places.get(entry.pupilId) ?? [];
+      const sameTrack = list.filter((place) => place.subject === group.subject);
+      const alreadyThere = sameTrack.some((place) => place.groupId === group.id);
 
-      // The uploaded list is authoritative: a student listed in a different
-      // group for the same track leaves the old one from today.
-      if (existing?.id) toEnd.push(existing.id);
-      toEnroll.push({ pupilId: entry.pupilId, groupId: group.id, startDate: today });
-      current.set(key, { id: null, groupId: group.id });
+      // The uploaded list is authoritative: every other place in this track
+      // closes today.
+      for (const place of sameTrack) {
+        if (place.groupId !== group.id && place.id) toEnd.add(place.id);
+      }
+
+      const plannedKey = `${entry.pupilId}|${group.id}`;
+      if (!alreadyThere && !planned.has(plannedKey)) {
+        toEnroll.push({ pupilId: entry.pupilId, groupId: group.id, startDate: today });
+        planned.add(plannedKey);
+      }
+
+      places.set(entry.pupilId, [
+        ...list.filter((place) => place.subject !== group.subject),
+        { id: alreadyThere ? "kept" : null, groupId: group.id, subject: group.subject },
+      ]);
     });
   }
 
-  for (let i = 0; i < toEnd.length; i += 500) {
+  const ending = [...toEnd];
+  for (let i = 0; i < ending.length; i += 500) {
     await prisma.enrollment.updateMany({
-      where: { id: { in: toEnd.slice(i, i + 500) } },
+      where: { id: { in: ending.slice(i, i + 500) } },
       data: { endDate: today },
     });
   }
   if (toEnroll.length > 0) {
-    await prisma.enrollment.createMany({ data: toEnroll });
+    await prisma.enrollment.createMany({ data: toEnroll, skipDuplicates: true });
   }
   onProgress("Putting students in their groups", resolved.length, resolved.length);
 
