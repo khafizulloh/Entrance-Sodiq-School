@@ -281,9 +281,16 @@ parallel-block timetable), a move never needs a time change.
 ## Excel uploads
 
 Download each template from **Uploads** — column names are matched loosely,
-so `First name`, `FIRST NAME` and `first_name` all work. `.xlsx`, `.xls` and
-`.csv` are accepted, up to 5 MB. Every upload reports back row by row: what
-was added, what was updated and which rows were rejected and why.
+so `First name`, `FIRST NAME` and `first_name` all work, and the Uzbek
+headings `Ism`, `Familiya`, `Sinf` and `Guruh` are understood too. `.xlsx`,
+`.xls` and `.csv` are accepted, up to 5 MB.
+
+The headings do not have to be on the first row. Every sheet in the workbook
+is checked, and in each one the first 20 rows, so a cover sheet, a title
+line, blank rows and headings repeated part-way down a long list all work.
+Every upload reports back which sheet and which heading row it used, with
+the headings it found, plus what was added, what was updated and which rows
+were rejected and why.
 
 | Upload | Columns |
 | ------ | ------- |

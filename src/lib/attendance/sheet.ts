@@ -10,28 +10,156 @@ import * as XLSX from "xlsx";
 
 export type SheetRow = Record<string, string>;
 
+export type ParsedSheet = {
+  rows: SheetRow[];
+  /** The spreadsheet row the headings were found on (1-based). */
+  headerRow: number;
+  /** The spreadsheet row the first student sits on. */
+  firstDataRow: number;
+  sheetName: string;
+  /** The headings as written in the file, for the upload report. */
+  columns: string[];
+};
+
 function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/** Parse an uploaded file into rows keyed by normalized header name. */
-export function parseSheet(buffer: ArrayBuffer): SheetRow[] {
-  const workbook = XLSX.read(buffer, { type: "array" });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return [];
+/**
+ * Words that mark a row as the heading row. Real sheets often start with a
+ * title, a blank line or a school logo, so the headings are rarely on row 1.
+ */
+const HEADER_WORDS = [
+  "firstname",
+  "lastname",
+  "surname",
+  "fullname",
+  "name",
+  "uid",
+  "studentid",
+  "grade",
+  "class",
+  "classname",
+  "group",
+  "groupq1",
+  "sateng",
+  "satenglish",
+  "satmath",
+  "teacher",
+  "day",
+  "period",
+  "slot",
+  "room",
+  "subject",
+];
 
-  const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(
-    workbook.Sheets[sheetName],
-    { defval: "", raw: false },
-  );
+function headerScore(cells: string[]): number {
+  let score = 0;
+  for (const cell of cells) {
+    const key = normalizeKey(cell);
+    if (!key) continue;
+    if (HEADER_WORDS.includes(key)) score += 2;
+    else if (HEADER_WORDS.some((word) => key.includes(word))) score += 1;
+  }
+  return score;
+}
 
-  return raw.map((row) => {
-    const out: SheetRow = {};
-    for (const [key, value] of Object.entries(row)) {
-      out[normalizeKey(key)] = String(value ?? "").trim();
-    }
-    return out;
+/** Repeated headings become Group, Group_1, Group_2 — as Excel itself does. */
+function uniqueKeys(cells: string[]): string[] {
+  const seen = new Map<string, number>();
+  return cells.map((cell) => {
+    const base = cell.trim();
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    return count === 0 ? base : `${base}_${count}`;
   });
+}
+
+function rowIsEmpty(cells: string[]): boolean {
+  return cells.every((cell) => String(cell ?? "").trim() === "");
+}
+
+/**
+ * Reads an uploaded file into rows keyed by heading name.
+ *
+ * Every sheet in the workbook is considered, and in each one the first 20
+ * rows are checked for the one that actually holds the column headings, so a
+ * title row, a blank row or a second sheet does not break the upload.
+ */
+export function parseSheet(buffer: ArrayBuffer): ParsedSheet {
+  const workbook = XLSX.read(buffer, { type: "array" });
+
+  let best: ParsedSheet | null = null;
+  let bestScore = -1;
+
+  for (const sheetName of workbook.SheetNames) {
+    const grid = XLSX.utils.sheet_to_json<string[]>(workbook.Sheets[sheetName], {
+      header: 1,
+      defval: "",
+      raw: false,
+      blankrows: true,
+    });
+    if (grid.length === 0) continue;
+
+    let headerIndex = -1;
+    let headerPoints = 0;
+    const limit = Math.min(grid.length, 20);
+    for (let i = 0; i < limit; i++) {
+      const points = headerScore((grid[i] ?? []).map(String));
+      if (points > headerPoints) {
+        headerPoints = points;
+        headerIndex = i;
+      }
+    }
+    // Nothing recognisable: fall back to the first row with content.
+    if (headerIndex === -1) {
+      headerIndex = grid.findIndex((row) => !rowIsEmpty((row ?? []).map(String)));
+      if (headerIndex === -1) continue;
+    }
+
+    const headerCells = (grid[headerIndex] ?? []).map((cell) => String(cell ?? "").trim());
+    const keys = uniqueKeys(headerCells);
+
+    const rows: SheetRow[] = [];
+    const rowNumbers: number[] = [];
+    for (let i = headerIndex + 1; i < grid.length; i++) {
+      const cells = (grid[i] ?? []).map((cell) => String(cell ?? "").trim());
+      if (rowIsEmpty(cells)) continue;
+      // A repeated heading row (page breaks in a long list) is not data.
+      if (headerScore(cells) >= headerPoints && headerPoints > 0) continue;
+
+      const row: SheetRow = {};
+      keys.forEach((key, column) => {
+        if (!key) return;
+        row[normalizeKey(key)] = cells[column] ?? "";
+      });
+      row.__row = String(i + 1); // the spreadsheet's own row number
+      rows.push(row);
+      rowNumbers.push(i + 1);
+    }
+
+    const score = headerPoints * 100 + rows.length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = {
+        rows,
+        headerRow: headerIndex + 1,
+        firstDataRow: rowNumbers[0] ?? headerIndex + 2,
+        sheetName,
+        columns: headerCells.filter(Boolean),
+      };
+    }
+  }
+
+  return (
+    best ?? { rows: [], headerRow: 0, firstDataRow: 0, sheetName: "", columns: [] }
+  );
+}
+
+/** The spreadsheet row a parsed row came from, for error messages. */
+export function rowNumberOf(row: SheetRow, fallback: number): number {
+  const value = Number(row.__row);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 /** First non-empty value among several possible column names. */

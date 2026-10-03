@@ -21,6 +21,7 @@ type UploadReport = {
   errors: RowIssue[];
   warnings: RowIssue[];
   accounts?: NewAccount[];
+  source?: { sheetName: string; headerRow: number; columns: string[] };
   note?: string;
 };
 
@@ -205,6 +206,13 @@ function UploadCard({
             {report.skipped > 0 ? ` · ${report.skipped} skipped` : ""}
           </p>
           {report.note && <p className="mt-1 text-xs text-slate-600">{report.note}</p>}
+
+          {report.source && (
+            <p className="mt-1 text-[11px] text-slate-500">
+              Read the sheet &ldquo;{report.source.sheetName}&rdquo;, headings on row{" "}
+              {report.source.headerRow}: {report.source.columns.join(" · ")}
+            </p>
+          )}
 
           {report.accounts && report.accounts.length > 0 && (
             <div className="mt-2">

@@ -2,7 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, requireHead } from "@/lib/attendance/auth";
 import { isValidIsoDate, schoolToday, toDbDate } from "@/lib/attendance/dates";
-import { parseDay, parseSheet, pick, pickInt, splitName } from "@/lib/attendance/sheet";
+import {
+  type ParsedSheet,
+  parseDay,
+  parseSheet,
+  pick,
+  pickInt,
+  rowNumberOf,
+  splitName,
+} from "@/lib/attendance/sheet";
 import {
   type Subject,
   normalizeSubject,
@@ -37,10 +45,29 @@ type UploadReport = {
   errors: RowIssue[];
   warnings: RowIssue[];
   accounts?: NewAccount[];
+  /** What the app understood the file to be, so a mismatch is obvious. */
+  source?: { sheetName: string; headerRow: number; columns: string[] };
   note?: string;
 };
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_ISSUES = 25;
+
+/** Keeps the report readable when a whole column is wrong. */
+function trimIssues(report: UploadReport): UploadReport {
+  for (const key of ["errors", "warnings"] as const) {
+    const list = report[key];
+    if (list.length > MAX_ISSUES) {
+      const extra = list.length - MAX_ISSUES;
+      report[key] = list.slice(0, MAX_ISSUES);
+      report[key].push({
+        row: 0,
+        message: `…and ${extra} more row${extra === 1 ? "" : "s"} like this.`,
+      });
+    }
+  }
+  return report;
+}
 
 function keyOf(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, " ");
@@ -67,26 +94,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "The file is larger than 5 MB." }, { status: 400 });
   }
 
-  let rows;
+  let sheet: ParsedSheet;
   try {
-    rows = parseSheet(await file.arrayBuffer());
+    sheet = parseSheet(await file.arrayBuffer());
   } catch {
     return NextResponse.json(
       { error: "Could not read that file. Upload an .xlsx, .xls or .csv file." },
       { status: 400 },
     );
   }
-  if (rows.length === 0) {
+  if (sheet.rows.length === 0) {
     return NextResponse.json(
-      { error: "No rows found. Check that the first row holds the column headings." },
+      {
+        error:
+          "No rows of data found. Check the sheet has a row of column headings with the students below it.",
+      },
       { status: 400 },
     );
   }
 
-  if (type === "students") return NextResponse.json(await importStudents(rows));
+  if (type === "students") return NextResponse.json(await importStudents(sheet));
   if (type === "groups") {
     const createAccounts = String(form.get("createAccounts") ?? "") !== "false";
-    return NextResponse.json(await importGroups(rows, { createAccounts }));
+    return NextResponse.json(await importGroups(sheet, { createAccounts }));
   }
   if (type === "timetable") {
     const name =
@@ -99,7 +129,11 @@ export async function POST(req: Request) {
       );
     }
     return NextResponse.json(
-      await importTimetable(rows, { name, effectiveFrom, uploadedById: auth.session.sub }),
+      await importTimetable(sheet, {
+        name,
+        effectiveFrom,
+        uploadedById: auth.session.sub,
+      }),
     );
   }
 
@@ -171,12 +205,18 @@ function loginIdFrom(fullName: string, taken: Set<string>): string {
 // Groups and their teachers
 // ---------------------------------------------------------------------------
 async function importGroups(
-  rows: Array<Record<string, string>>,
+  sheet: ParsedSheet,
   options: { createAccounts: boolean },
 ): Promise<UploadReport> {
+  const rows = sheet.rows;
   const report: UploadReport = {
     type: "groups",
     rows: rows.length,
+    source: {
+      sheetName: sheet.sheetName,
+      headerRow: sheet.headerRow,
+      columns: sheet.columns,
+    },
     created: 0,
     updated: 0,
     skipped: 0,
@@ -200,7 +240,7 @@ async function importGroups(
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const rowNumber = i + 2; // the heading is row 1
+    const rowNumber = rowNumberOf(row, sheet.headerRow + 1 + i);
 
     for (let pairIndex = 0; pairIndex < pairs.length; pairIndex++) {
       const [groupNames, teacherNames] = pairs[pairIndex];
@@ -287,24 +327,30 @@ async function importGroups(
   }
 
   if (report.created + report.updated === 0) {
-    report.errors.push({
+    report.errors.unshift({
       row: 0,
-      message: "No group names found. The sheet needs a Group column and a Teacher column.",
+      message: `Nothing was read. The app used the sheet "${sheet.sheetName}" with headings on row ${sheet.headerRow}: ${
+        sheet.columns.join(" · ") || "none found"
+      }. It needs a Group column and a Teacher column.`,
     });
   }
 
-  return report;
+  return trimIssues(report);
 }
 
 // ---------------------------------------------------------------------------
 // Students, with up to three groups each
 // ---------------------------------------------------------------------------
-async function importStudents(
-  rows: Array<Record<string, string>>,
-): Promise<UploadReport> {
+async function importStudents(sheet: ParsedSheet): Promise<UploadReport> {
+  const rows = sheet.rows;
   const report: UploadReport = {
     type: "students",
     rows: rows.length,
+    source: {
+      sheetName: sheet.sheetName,
+      headerRow: sheet.headerRow,
+      columns: sheet.columns,
+    },
     created: 0,
     updated: 0,
     skipped: 0,
@@ -338,7 +384,7 @@ async function importStudents(
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const rowNumber = i + 2;
+    const rowNumber = rowNumberOf(row, sheet.headerRow + 1 + i);
 
     let firstName = pick(row, "First Name", "Firstname", "Name", "Ism");
     let lastName = pick(row, "Last Name", "Surname", "Lastname", "Familiya");
@@ -436,19 +482,34 @@ async function importStudents(
     }
   }
 
-  return report;
+  if (report.created + report.updated === 0) {
+    report.errors.unshift({
+      row: 0,
+      message: `No students were read. The app used the sheet "${sheet.sheetName}" with headings on row ${sheet.headerRow}: ${
+        sheet.columns.join(" · ") || "none found"
+      }. It needs a First Name column and a Last Name column (or one Full Name column).`,
+    });
+  }
+
+  return trimIssues(report);
 }
 
 // ---------------------------------------------------------------------------
 // Timetable
 // ---------------------------------------------------------------------------
 async function importTimetable(
-  rows: Array<Record<string, string>>,
+  sheet: ParsedSheet,
   options: { name: string; effectiveFrom: string; uploadedById: string },
 ): Promise<UploadReport> {
+  const rows = sheet.rows;
   const report: UploadReport = {
     type: "timetable",
     rows: rows.length,
+    source: {
+      sheetName: sheet.sheetName,
+      headerRow: sheet.headerRow,
+      columns: sheet.columns,
+    },
     created: 0,
     updated: 0,
     skipped: 0,
@@ -480,7 +541,7 @@ async function importTimetable(
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const rowNumber = i + 2;
+    const rowNumber = rowNumberOf(row, sheet.headerRow + 1 + i);
 
     const groupName = pick(row, "Group Name", "Group", "Guruh");
     const group = groupName ? groupByName.get(keyOf(groupName)) : undefined;
@@ -561,8 +622,13 @@ async function importTimetable(
   }
 
   if (slots.length === 0) {
-    report.errors.push({ row: 0, message: "No usable rows, so no timetable was saved." });
-    return report;
+    report.errors.unshift({
+      row: 0,
+      message: `No usable rows, so no timetable was saved. The app used the sheet "${sheet.sheetName}" with headings on row ${sheet.headerRow}: ${
+        sheet.columns.join(" · ") || "none found"
+      }.`,
+    });
+    return trimIssues(report);
   }
 
   await prisma.$transaction(async (tx) => {
@@ -581,5 +647,5 @@ async function importTimetable(
   });
 
   report.created = slots.length;
-  return report;
+  return trimIssues(report);
 }
