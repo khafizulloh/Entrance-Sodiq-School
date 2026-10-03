@@ -2,6 +2,9 @@ import { redirect } from "next/navigation";
 import { GroupRegisterView } from "@/components/attendance/GroupRegisterView";
 import { getStaffSession } from "@/lib/attendance/auth";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "Group register — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
@@ -13,7 +16,7 @@ export default async function TeacherGroupRegister({
   searchParams: Promise<{ date?: string; period?: string; month?: string }>;
 }) {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
 
   const { groupId } = await params;
   const { date, period, month } = await searchParams;

@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { prisma } from "@/lib/prisma";
 
 /**
  * Staff authentication for the attendance tracker.
@@ -75,12 +76,35 @@ export async function clearStaffCookie() {
   store.delete(STAFF_COOKIE_NAME);
 }
 
-/** The signed-in staff member, or null. */
+/**
+ * The signed-in staff member, or null.
+ *
+ * The account is checked against the database, not just the cookie. A
+ * rebuilt database leaves old cookies pointing at staff ids that no longer
+ * exist, which otherwise looks like a working session until the first save
+ * fails. Reading the row also keeps the name and role current without
+ * anyone having to sign in again.
+ */
 export async function getStaffSession(): Promise<StaffSession | null> {
   const store = await cookies();
   const token = store.get(STAFF_COOKIE_NAME)?.value;
   if (!token) return null;
-  return verifyStaffToken(token);
+
+  const session = await verifyStaffToken(token);
+  if (!session) return null;
+
+  const staff = await prisma.staff.findUnique({
+    where: { id: session.sub },
+    select: { id: true, loginId: true, fullName: true, role: true, isActive: true },
+  });
+  if (!staff || !staff.isActive) return null;
+
+  return {
+    sub: staff.id,
+    loginId: staff.loginId,
+    name: staff.fullName,
+    role: staff.role === "head" ? "head" : "teacher",
+  };
 }
 
 /** Session or a 401 — for use inside route handlers. */
@@ -91,7 +115,10 @@ export async function requireStaff(): Promise<
   if (!session) {
     return {
       ok: false,
-      response: Response.json({ error: "Not signed in." }, { status: 401 }),
+      response: Response.json(
+        { error: "Your sign-in is no longer valid. Sign out and sign in again." },
+        { status: 401 },
+      ),
     };
   }
   return { ok: true, session };

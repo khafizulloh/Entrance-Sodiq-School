@@ -8,12 +8,15 @@ import { periodLabel } from "@/lib/attendance/periods";
 import { absenceReport } from "@/lib/attendance/reports";
 import { subjectLabel } from "@/lib/attendance/subjects";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "Head teacher dashboard — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
 export default async function HeadDashboard() {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
   if (session.role !== "head") redirect("/attendance/teacher");
 
   const [data, topAbsent] = await Promise.all([

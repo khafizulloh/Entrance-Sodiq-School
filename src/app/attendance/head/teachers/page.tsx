@@ -4,12 +4,15 @@ import { TeacherAccounts, type StaffRow } from "@/components/attendance/TeacherA
 import { getStaffSession } from "@/lib/attendance/auth";
 import { prisma } from "@/lib/prisma";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "Teachers — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
 export default async function HeadTeachers() {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
   if (session.role !== "head") redirect("/attendance/teacher");
 
   const [staff, pending] = await Promise.all([

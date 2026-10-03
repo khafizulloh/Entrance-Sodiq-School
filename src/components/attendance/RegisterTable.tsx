@@ -124,10 +124,7 @@ export function RegisterTable({
             })),
           }),
         });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? "Could not save.");
-        }
+        if (!res.ok) throw new Error(await saveErrorFrom(res));
       }
       setSaveState("saved");
       setError(null);
@@ -253,8 +250,7 @@ export function RegisterTable({
           markAllPresent: true,
         }),
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? "Could not save.");
+      if (!res.ok) throw new Error(await saveErrorFrom(res));
 
       setCells((previous) => {
         const next = { ...previous };
@@ -586,6 +582,16 @@ export function RegisterTable({
       )}
     </div>
   );
+}
+
+/** Turns a failed save into something the teacher can act on. */
+async function saveErrorFrom(res: Response): Promise<string> {
+  if (res.status === 401) {
+    return "Your sign-in is no longer valid. Sign out, sign in again, and enter the marks once more.";
+  }
+  const body = await res.json().catch(() => null);
+  if (body?.error) return String(body.error);
+  return `The server could not save this (error ${res.status}). Try again.`;
 }
 
 // Shared with the server so both render the same text.

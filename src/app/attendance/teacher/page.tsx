@@ -9,6 +9,9 @@ import { periodLabel } from "@/lib/attendance/periods";
 import { bandLabel, subjectLabel } from "@/lib/attendance/subjects";
 import type { ResolvedSlot } from "@/lib/attendance/timetable";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "Teacher dashboard — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
@@ -20,7 +23,7 @@ function registerHref(groupId: string, date: string, period?: number) {
 
 export default async function TeacherDashboard() {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
 
   const data = await teacherDashboard(session.sub);
   const week: Record<number, ResolvedSlot[]> = {};

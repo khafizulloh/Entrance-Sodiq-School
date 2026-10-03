@@ -6,12 +6,15 @@ import { schoolToday, toIsoDate } from "@/lib/attendance/dates";
 import { activeTerm } from "@/lib/attendance/timetable";
 import { prisma } from "@/lib/prisma";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "Uploads — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
 export default async function HeadUploads() {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
   if (session.role !== "head") redirect("/attendance/teacher");
 
   const [term, pending] = await Promise.all([

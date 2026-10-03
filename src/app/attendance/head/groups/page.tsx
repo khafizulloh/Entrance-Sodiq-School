@@ -7,12 +7,15 @@ import { schoolToday } from "@/lib/attendance/dates";
 import { SUBJECTS, bandLabel, subjectLabel } from "@/lib/attendance/subjects";
 import { prisma } from "@/lib/prisma";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "Groups — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
 export default async function HeadGroups() {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
   if (session.role !== "head") redirect("/attendance/teacher");
 
   const [groups, teachers, pending] = await Promise.all([

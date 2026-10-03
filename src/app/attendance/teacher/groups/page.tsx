@@ -6,12 +6,15 @@ import { prisma } from "@/lib/prisma";
 import { schoolToday } from "@/lib/attendance/dates";
 import { bandLabel, subjectLabel } from "@/lib/attendance/subjects";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "My groups — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
 export default async function TeacherGroups() {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
 
   const today = schoolToday();
   const groups = await prisma.group.findMany({

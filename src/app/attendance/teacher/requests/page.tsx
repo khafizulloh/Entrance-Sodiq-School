@@ -4,12 +4,15 @@ import { getStaffSession } from "@/lib/attendance/auth";
 import { prisma } from "@/lib/prisma";
 import { MoveStatusBadge } from "@/components/attendance/MoveStatusBadge";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "My move requests — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
 export default async function TeacherRequests() {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
 
   const requests = await prisma.moveRequest.findMany({
     where: { requestedById: session.sub },

@@ -12,12 +12,15 @@ import { currentPeriod } from "@/lib/attendance/periods";
 import { type ResolvedSlot, listVersions, slotsForDate } from "@/lib/attendance/timetable";
 import { prisma } from "@/lib/prisma";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "Timetable — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
 export default async function HeadTimetable() {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
   if (session.role !== "head") redirect("/attendance/teacher");
 
   const now = schoolNow();

@@ -6,12 +6,15 @@ import { countCarryableRecords } from "@/lib/attendance/moves";
 import { telegramEnabled } from "@/lib/attendance/telegram";
 import { prisma } from "@/lib/prisma";
 
+// A cookie whose account is gone: clear it, then sign in again.
+const SIGNED_OUT = "/api/attendance/auth/logout";
+
 export const metadata = { title: "Move requests — Sodiq School Attendance" };
 export const dynamic = "force-dynamic";
 
 export default async function HeadMoves() {
   const session = await getStaffSession();
-  if (!session) redirect("/attendance/login");
+  if (!session) redirect(SIGNED_OUT);
   if (session.role !== "head") redirect("/attendance/teacher");
 
   const requests = await prisma.moveRequest.findMany({
